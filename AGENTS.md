@@ -12,7 +12,8 @@
 
 ## 项目现状与实现
 
-- 当前仓库处于初始化阶段，仅有 `little-sum.code-workspace` 和 AI 协作入口，尚未确定技术栈、构建或测试命令。
+- 当前仓库处于初始化阶段，仅有 `little-sum.code-workspace`、AI 协作入口和 `scripts/check-agents.sh`，尚未确定业务技术栈、构建或测试命令。
+- 并行约定校验入口：`sh scripts/check-agents.sh`，退出码非 0 表示违反本文件「并行 Agent」断言。
 - 项目说明、运行方式与验证入口在引入实际代码后维护于 `README.md`，不虚构未存在的命令或能力。
 - 遵循现有代码组织和风格，保持职责清晰；优先复用语义匹配的实现，不为未知需求增加抽象。
 - 修改接口时检查调用方、边界和失败行为；不顺带进行无关重构或全量格式化。
@@ -21,11 +22,23 @@
 ## 任务上下文
 
 - 跨会话共享记录放 `.ai/`；会话或工具私有笔记留在各自本地目录。
-- `.ai/current.md` 仅保留当前现状与未完成事项，一份、覆盖更新。
+- `.ai/current.md` 仅保留当前现状与未完成事项，一份，由主 worktree 的单写者覆盖更新，linked worktree 内不得修改（见「并行 Agent」）。
 - `.ai/timeline.md` 保留跨任务决策与历史结论，只加不减，新条目在上，包含 `决策：`。
-- `.ai/contexts/<任务名>.md` 只记录在做任务的必要详情，头部保留日期与基线（分支、提交），不另加状态字段。
+- `.ai/contexts/<任务名>.md` 只记录在做任务的必要详情，头部保留列表项字段 `owner:`、`date:`、`branch:`、`base:`（基线提交），不另加状态字段。
 - 接续任务先读 `current.md` 和 `timeline.md` 最近条目，按需读 `contexts/`，核对分支、提交和工作区；记录仅供参考，不自动执行历史待办。
 - 任务收尾时，将决策与根因写入 `timeline.md`，未完成事项写入 `current.md`，然后删除该任务的 context 文件；不保留聊天流水账。
+
+## 并行 Agent
+
+- 每个 agent 会话使用独立 git worktree，目录 `../<agent>-worktree`，`agent` 为 `qoder`、`claude`、`codex` 等小写标识；主 worktree 只归编排会话使用，负责 `current.md` 归并、分支合并与提交。
+- 建立：`git worktree add "../<agent>-worktree" -b <任务名>`。分支名 = 任务名 = `.ai/contexts/<任务名>.md` 文件名，三者必须一致。
+- linked worktree 一律从 `main` 最新提交建立，否则该工作树内没有本约定与校验脚本。
+- 约定生效前已存在的 worktree 由所属会话执行 `git worktree move <旧路径> "../<agent>-worktree"` 迁移；迁移前校验脚本会持续报 FAIL。
+- 收尾：任务合入 `main` 后执行 `git worktree remove "../<agent>-worktree"` 与 `git branch -d <任务名>`；无进行中任务时不保留 worktree。
+- 一个 worktree 同一时间只承载一个任务；不得用 `git stash`、`git checkout -- .`、`git reset --hard`、`git clean -fd` 处置其他会话的改动。
+- `.ai/timeline.md` 合并冲突时保留双方条目并按日期倒序，不删他人结论。
+- 写入共享文件（`.ai/current.md`、`.ai/timeline.md`、各工具的共享记忆索引）前先重读当前内容，只增量修改，不整篇覆盖、不删除其他 agent 的条目。
+- 硬件与固定端口（串口、调试探针、OpenOCD/gdb 端口）不在本节约定范围，占用冲突由用户串行安排。
 
 ## Git 与验证
 
