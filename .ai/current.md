@@ -7,8 +7,8 @@
 - 四个 worker 窗口的目录与分支命名均已合规。最近一次校验 `sh scripts/check-agents.sh` 在主 worktree 实跑：8 条全 PASS、结论「合规」、退出码 0；提交基线随并行会话变动，以运行时输出为准。
 - 已完成（2026-10-14，用户授权编排会话代提交）：四个窗口的 `.ai/contexts/<标识>.md` 由编排会话在各 worktree 内以明确路径提交，再 octopus 合并进 `main`；校验已转为 `PASS 头部字段齐全`。此后 `contexts/` 是跟踪状态，worker 的 `git merge main` 不会再撞「未跟踪文件会被覆盖」。
 - 未完成：四个 worker 分支基线仍落后 `main`，各窗口开工前需 `git merge main`（当时快照：分支 HEAD 为 `be69eca`、`0bf9aa6`、`454f55f`、`d139178`，均为仅新增自身 context 的提交）。
-- 待补约定：编排会话可代 worker 提交其未跟踪文件，属本次用户明确授权，尚未写入 `AGENTS.md`；是否固化为约定需用户决定。
-- 待确认：本文 21:17 版本由另一会话写入并提交（`main` 当时前进两个提交），与「主 worktree 只归编排会话使用」存在双写者风险，需用户确认那个会话是否停用。
+- 已完成：「编排会话可代 worker 提交其未跟踪 context」已固化进 `AGENTS.md`「并行 Agent」。
+- 已完成（2026-10-14，用户确认）：21:17 写入 `current.md` 的另一会话停用，主 worktree 恢复单一编排写者。编排窗口自身的标识仍未定，`AGENTS.md` 对编排会话没有 `contexts/<标识>.md` 对应名。
 - 约定空白：`AGENTS.md` 未给编排窗口自身的标识，因而 `.ai/contexts/<标识>.md` 对编排窗口没有对应名字；改动现有约定前需用户认可。
 - 未完成：树莓派 3B 的具体方案与要解决的 CW32 开发痛点未确认；硬件独占资源（串口、调试探针、OpenOCD/gdb 端口）的占用约定按用户决定未纳入，开始接硬件联调前需补。
 - 校验入口：`sh scripts/check-agents.sh`，须在具体窗口内运行以校验该窗口；FAIL 条数与 worktree 基线都是当时快照，不复用本文描述。

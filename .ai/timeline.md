@@ -1,5 +1,13 @@
 # 任务时间线
 
+## 2026-10-14 — 编排窗口接手 context 归并，主 worktree 恢复单写者
+
+- 决策：用户指定主 worktree（`D:\projects\little-sum`，`main`）的会话为编排窗口，负责 worker 分支合并与 `current.md` 归并；`qoder-a`、`qoder-b`、`minimax-a`、`minimax-b` 四个标识已被 worker 窗口占用，编排会话不新建 worktree、不占这些标识。"qoder-a 不能使用"指标识被占，不是该 worktree 有故障。
+- 决策：编排会话可代 worker 提交其 worktree 内未跟踪的 `.ai/contexts/<标识>.md`，只按明确路径 `git add` 后提交，不改写内容，不处置他人已跟踪改动；已写入 `AGENTS.md`「并行 Agent」。根因：四个 context 长期未跟踪使归并没有入口；反向顺序（`main` 先建同名跟踪文件）会让 worker 的 `git merge main` 被 git 以「untracked working tree file would be overwritten」拒绝，窗口卡死。
+- 决策：`main` 推送到 `origin`。同机各 worktree 的同步不走远端——它们共享同一对象库，`git merge main` 本地即时可见，push 只为 GitHub 与其他机器。
+- 确认：21:17 写入 `current.md` 并推进 `main` 的另一会话，由用户确认停用，主 worktree 恢复单写者。
+- 验证：四个 context 在各自 worktree 提交为 `be69eca`、`0bf9aa6`、`454f55f`、`d139178`，octopus 合并为 `938cc4c`；`sh scripts/check-agents.sh` 8 条全 PASS、退出码 0，原 `INFO 待归并` 转为 `PASS 头部字段齐全`。`minimax-work` 已由所属窗口迁成 `minimax-a-worktree`，上一条目里的 FAIL 已消除。
+
 ## 2026-10-14 — 并行隔离的分配单位由任务改为 agent 窗口
 
 - 决策：一个 agent 窗口长期占一个 worktree 和一个分支，窗口内换任务不重建 worktree。用户明确否掉了按任务建销的做法，认为对常驻窗口是浪费。
