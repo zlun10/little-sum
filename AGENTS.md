@@ -24,20 +24,20 @@
 - 跨会话共享记录放 `.ai/`；会话或工具私有笔记留在各自本地目录。
 - `.ai/current.md` 仅保留当前现状与未完成事项，一份，由主 worktree 的单写者覆盖更新，linked worktree 内不得修改（见「并行 Agent」）。
 - `.ai/timeline.md` 保留跨任务决策与历史结论，只加不减，新条目在上，包含 `决策：`。
-- `.ai/contexts/<任务名>.md` 只记录在做任务的必要详情，头部保留列表项字段 `owner:`、`date:`、`branch:`、`base:`（基线提交），不另加状态字段。
+- `.ai/contexts/<窗口标识>.md` 是窗口的长期记录，头部保留列表项字段 `owner:`、`date:`、`branch:`、`base:`（基线提交），正文按任务分节，不另加状态字段。
 - 接续任务先读 `current.md` 和 `timeline.md` 最近条目，按需读 `contexts/`，核对分支、提交和工作区；记录仅供参考，不自动执行历史待办。
-- 任务收尾时，将决策与根因写入 `timeline.md`，未完成事项写入 `current.md`，然后删除该任务的 context 文件；不保留聊天流水账。
+- 任务收尾时，将决策与根因写入 `timeline.md`，未完成事项交主 worktree 单写者写入 `current.md`，再把该任务在本窗口 context 中的过程细节压缩为结论小节；不保留聊天流水账，也不删窗口 context 或分支。
 
 ## 并行 Agent
 
-- 每个 agent 会话使用独立 git worktree，目录 `../<agent>-worktree`，`agent` 为 `qoder`、`claude`、`codex` 等小写标识；主 worktree 只归编排会话使用，负责 `current.md` 归并、分支合并与提交。
-- 同一 agent 并行多个会话时目录用 `../<agent>-<后缀>-worktree`，后缀只区分会话，不改变分支名 = 任务名 = context 文件名的要求。
-- 建立：`git worktree add "../<agent>-worktree" -b <任务名>`。分支名 = 任务名 = `.ai/contexts/<任务名>.md` 文件名，三者必须一致。
-- 任务名只用小写字母、数字和短横线，不含 `/`；带斜杠的分支会让 context 路径分层，使一一对应检查失效。
-- linked worktree 一律从 `main` 最新提交建立，否则该工作树内没有本约定与校验脚本。
-- 约定生效前已存在的 worktree 由所属会话执行 `git worktree move <旧路径> "../<agent>-worktree"` 迁移；迁移前校验脚本会持续报 FAIL。
-- 收尾：任务合入 `main` 后执行 `git worktree remove "../<agent>-worktree"` 与 `git branch -d <任务名>`；无进行中任务时不保留 worktree。
-- 一个 worktree 同一时间只承载一个任务；不得用 `git stash`、`git checkout -- .`、`git reset --hard`、`git clean -fd` 处置其他会话的改动。
+- 分配单位是 agent 窗口，不是任务：一个窗口长期占一个 worktree 和一个分支，窗口内换任务不重建 worktree。
+- 窗口标识为小写字母、数字和短横线，不含 `/`，如 `qoder-a`、`minimax-1`。分支名 = 窗口标识 = `.ai/contexts/<窗口标识>.md`，worktree 目录固定为 `../<窗口标识>-worktree`，四者由同一标识派生。
+- 建立：`git worktree add "../<窗口标识>-worktree" -b <窗口标识>`，从 `main` 最新提交建立，否则该工作树内没有本约定与校验脚本。
+- 主 worktree 只归编排会话使用，负责 `current.md` 归并、各窗口分支合并与提交。
+- 窗口每次开始新任务前先 `git merge main`，保持约定与校验脚本最新。
+- 一个窗口同一时间只推进一个任务；不得用 `git stash`、`git checkout -- .`、`git reset --hard`、`git clean -fd` 处置其他窗口的改动。
+- 关闭窗口时才清理：确认任务已合入 `main` 后执行 `git worktree remove "../<窗口标识>-worktree"` 与 `git branch -d <窗口标识>`。
+- 约定生效前已存在的 worktree 由所属窗口自行迁移：先 `git branch -m <旧分支> <窗口标识>` 去斜杠，再 `git worktree move <旧目录> "../<窗口标识>-worktree"`；迁移前校验脚本持续报 FAIL，编排会话不代改。
 - `.ai/timeline.md` 合并冲突时保留双方条目并按日期倒序，不删他人结论。
 - 写入共享文件（`.ai/current.md`、`.ai/timeline.md`、各工具的共享记忆索引）前先重读当前内容，只增量修改，不整篇覆盖、不删除其他 agent 的条目。
 - 硬件与固定端口（串口、调试探针、OpenOCD/gdb 端口）不在本节约定范围，占用冲突由用户串行安排。
