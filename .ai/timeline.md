@@ -1,5 +1,14 @@
 # 任务时间线
 
+## 2026-10-15 — 文档落点归一到 docs/pi，重叠文档按「端」与「主题」合稿
+
+- 决策：树莓派文档唯一落点为 `docs/pi/`，文件名统一 `rpi-` 前缀。仓库根、`docs/hardware/`、`.ai/` 三处落点清除——四个窗口各自投放导致同一主题散在 4 处目录。
+- 决策：合稿主轴。接入类按「Pi 侧 / 电脑侧」分两篇，串口作救援章（接线归 Pi 侧、终端参数归电脑侧），主干取 `rpi-network.md`（证据标注体系最全）与 `rpi-ssh.md`（唯一含本机 `[事实]` 实测），`rpi-headless-access.md` 拆完即删。GPIO 类合两篇：`rpi-gpio-pinout.md` 为引脚与电气主干，`rpi-gpio-control.md` 并入其后半，SWD/CW32 独立成章；`rpi-3b-hardware.md` 退为规格/功耗/选型/上手参考。
+- 决策：跨文档分歧一律不得互抄裁决，须实测或权威手册择一。已实测出的分歧点：`nmcli ipv4.dns` 多值分隔符、新镜像默认账户与 SSH 预置、`raspberrypi.local` vs 只用 IP、引脚表在针 16/SPI0 MOSI/针 38/GPIO 计数/硬件 PWM 上的两处不一致。根因：多窗口并行写同一事实会在多处各自漂移，互抄只会把错误扩散并伪装成「多篇都这么写」。
+- 决策：`main` 推送 `origin` 并在合稿前跑一次「同步所有 tree」，让四个窗口在最新落点上开工。
+- 验证：`git mv` 后 grep 旧文件名与旧目录，文档内无残留引用（`contexts/` 内历史陈述按约定保留）；`sh scripts/sync-agents.sh` 四窗口全 `OK 已跟上 main`，校验 8 条 PASS、退出码 0。
+- 方法记录：重叠分析用两个只读子代理分别读接入类 4 篇、GPIO 类 3 篇，输出重复清单、矛盾清单、独有要点与合并建议，主上下文只保留结论。
+
 ## 2026-10-14 — 编排窗口接手 context 归并，主 worktree 恢复单写者
 
 - 决策：用户指定主 worktree（`D:\projects\little-sum`，`main`）的会话为编排窗口，负责 worker 分支合并与 `current.md` 归并；`qoder-a`、`qoder-b`、`minimax-a`、`minimax-b` 四个标识已被 worker 窗口占用，编排会话不新建 worktree、不占这些标识。"qoder-a 不能使用"指标识被占，不是该 worktree 有故障。
