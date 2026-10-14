@@ -8,6 +8,7 @@
 - 决策：历史遗留 worktree 不由本会话迁移，只报 FAIL 提醒；`git worktree list --porcelain` 在本机不输出 `gitdir` 行，改用 gitdir 特征推导主工作树。
 - 决策：硬件与固定端口（串口、CMSIS-DAP 探针、OpenOCD 3333/4444）不纳入本约定，由用户串行安排——worktree 解决不了设备独占，这类干扰会产生"看起来通过、实际测的是别人的板子"的假结论。
 - 验证：5 条断言在真实 linked worktree 与隔离临时仓库均正反验证通过。首版脚本用 `awk` 过滤 `gitdir` 行，本机该字段不存在导致过滤结果恒空，出现假 `exit 0`，已修正后重新验证。
+- 决策：校验结果里的 FAIL 条数是当时快照，不写成稳定事实——收尾期间另一会话连续新建了 `minimax-work` 与 `minimax-work2`，worktree 集合随并行作业即时变化。
 - 现场发现：另一 agent 会话已建立 `D:/projects/minimax-work`（分支 `agent/minimax-work`，基线 `e1d4462`），命名不符新约定；带 `/` 的分支名会击穿 context 一一对应检查，需补任务名字符约束。
 
 ## 2026-10-14 — 初始化 AI 协作入口
