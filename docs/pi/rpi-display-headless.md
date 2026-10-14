@@ -93,7 +93,7 @@ systemd.unit=multi-user.target
 console=tty1
 ```
 
-这条让内核把启动日志同时输出到 tty1。这样即使没接显示器，也能通过串口（40 针 GPIO 排针 + USB-TTL 模块，**接线见 `raspberry-pi-headless-access.md`**）或临时接屏看到完整启动过程。无头调试神器。
+这条让内核把启动日志同时输出到 tty1。这样即使没接显示器，也能通过串口（40 针 GPIO 排针 + USB-TTL 模块，**接线见 `rpi-headless-access.md`**）或临时接屏看到完整启动过程。无头调试神器。
 
 完整示例：
 
@@ -190,4 +190,4 @@ vcgencmd get_throttled       # 是否被限速/限流，返回 0x0 最健康
 
 **完全黑屏/无信号**：接显示器确认是显示器问题还是树莓派没输出。若已经改过 `hdmi=0` 或 `enable_tvout=1`，先恢复 config.txt 默认值。
 
-**开机卡住不动**：用串口日志看 —— 接 USB-TTL 模块到 **pin 8（TXD）、pin 10（RXD）、pin 6（GND）**，`cmdline.txt` 里确保有 `console=tty1` 或 `console=serial0,115200`，就能在电脑终端看到卡在哪一步。完整接线说明见 `raspberry-pi-headless-access.md` 第三节。
+**开机卡住不动**：用串口日志看 —— 接 USB-TTL 模块到 **pin 8（TXD）、pin 10（RXD）、pin 6（GND）**，`cmdline.txt` 里确保有 `console=tty1` 或 `console=serial0,115200`，就能在电脑终端看到卡在哪一步。完整接线说明见 `rpi-headless-access.md` 第三节。

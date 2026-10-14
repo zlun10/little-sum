@@ -31,7 +31,7 @@
 
 ## 3. GPIO 引脚表
 
-实际的代码控制方式(lgpio / pinctrl / libgpiod)见 [GPIO 控制速查](./gpio-control.md),其中还包括通过 SWD 控制 CW32 的 GPIO。
+实际的代码控制方式(lgpio / pinctrl / libgpiod)见 [GPIO 控制速查](./rpi-gpio-control.md),其中还包括通过 SWD 控制 CW32 的 GPIO。
 
 逻辑电平为 **3.3 V**,不是 5 V,5 V 传感器直连会烧板子。电源与接地针的分布不是简单奇偶规律:3.3 V 在针 **1、17**,5 V 在针 **2、4**,GND 在针 **6、9、14、20、25、30、34、38、39**。其余为 GPIO。
 

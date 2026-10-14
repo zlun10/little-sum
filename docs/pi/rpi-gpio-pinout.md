@@ -146,7 +146,7 @@ Pi 3 和 4 把原本的**硬件 UART**（`/dev/ttyAMA0`，PL011）改给了板�
 
 三个应对办法：
 
-1. **加 `enable_uart=1`** 到 config.txt（路径见 `raspberry-pi-display-headless.md`），把波特率锁定。串口只用来输出开机日志、做调试，这个够用。
+1. **加 `enable_uart=1`** 到 config.txt（路径见 `rpi-display-headless.md`），把波特率锁定。串口只用来输出开机日志、做调试，这个够用。
 2. **禁用蓝牙**（`sudo raspi-config` → Interface Options → Bluetooth），拿回硬件 UART 的稳定性。
 3. **两者都做**：禁用蓝牙 + config.txt 加 `dtoverlay=miniuart-bt`，这样硬件 UART（ttyAMA0）完整回到 GPIO 14/15，代价是蓝牙不能用。
 
@@ -203,5 +203,5 @@ GPIO.output(17, GPIO.HIGH)
 
 ## 九、相关文档
 
-- `raspberry-pi-display-headless.md` — `config.txt` / `cmdline.txt` 路径与显示配置
-- `raspberry-pi-headless-access.md` — 串口接线（在 40 针排针上用 pin 8/10/6）、SSH
+- `rpi-display-headless.md` — `config.txt` / `cmdline.txt` 路径与显示配置
+- `rpi-headless-access.md` — 串口接线（在 40 针排针上用 pin 8/10/6）、SSH

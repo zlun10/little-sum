@@ -4,7 +4,7 @@
 > A. 树莓派 3B 控制**自己板子上的** GPIO
 > B. 树莓派作为上位机,通过 SWD 控制**外部 CW32 MCU 的** GPIO
 >
-> 前置文档:[树莓派 3 Model B 参考笔记](./raspberry-pi-3b.md)
+> 前置文档:[树莓派 3 Model B 参考笔记](./rpi-3b-hardware.md)
 
 ---
 
