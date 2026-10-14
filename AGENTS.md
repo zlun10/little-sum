@@ -32,6 +32,7 @@
 
 - 每个 agent 会话使用独立 git worktree，目录 `../<agent>-worktree`，`agent` 为 `qoder`、`claude`、`codex` 等小写标识；主 worktree 只归编排会话使用，负责 `current.md` 归并、分支合并与提交。
 - 建立：`git worktree add "../<agent>-worktree" -b <任务名>`。分支名 = 任务名 = `.ai/contexts/<任务名>.md` 文件名，三者必须一致。
+- 任务名只用小写字母、数字和短横线，不含 `/`；带斜杠的分支会让 context 路径分层，使一一对应检查失效。
 - linked worktree 一律从 `main` 最新提交建立，否则该工作树内没有本约定与校验脚本。
 - 约定生效前已存在的 worktree 由所属会话执行 `git worktree move <旧路径> "../<agent>-worktree"` 迁移；迁移前校验脚本会持续报 FAIL。
 - 收尾：任务合入 `main` 后执行 `git worktree remove "../<agent>-worktree"` 与 `git branch -d <任务名>`；无进行中任务时不保留 worktree。

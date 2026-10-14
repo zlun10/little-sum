@@ -5,6 +5,7 @@
 #   3 每份 .ai/contexts/*.md 头部含 owner/date/branch/base 字段
 #   4 不存在游离的 .ai/current-*.md
 #   5 linked worktree 的当前分支有同名 context 文件
+#   6 .ai/contexts 下不得分层存放（任务名含 / 会让断言 5 失效）
 # 主 worktree 运行时另列出各 linked worktree 中尚未归并的 context 文件（INFO，不判违规）。
 set -u
 
@@ -72,6 +73,10 @@ if [ -d .ai/contexts ]; then
       report FAIL "头部缺字段$missing: $f"
     fi
   done < "$tmp_ctx"
+  nested=$(find .ai/contexts -mindepth 2 -name '*.md' -print)
+  if [ -n "$nested" ]; then
+    report FAIL "context 分层存放，任务名不含 /: $(printf '%s' "$nested" | tr '\n' ' ')"
+  fi
 else
   printf 'INFO  无 .ai/contexts 目录\n'
 fi
