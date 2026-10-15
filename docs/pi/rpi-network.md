@@ -144,6 +144,7 @@ sudo cp /boot/firmware/cmdline.txt /boot/firmware/cmdline.txt.bak
 | `hdmi_group=2` + `hdmi_mode=16` | 强制分辨率 | group 2 = DMT，`16` = 1920×1080@60 |
 | `framebuffer_width=1920` / `framebuffer_height=1080` | 固定 framebuffer 尺寸 | 无头截图、无头浏览器需要知道「虚拟屏幕」多大 |
 | `disable_overscan=1` | 去黑边 | 画面不铺满时用 |
+| `hdmi_drive=2` | 强制 HDMI 输出（含音频） | 来自 `rpi-display-headless.md`，长线缆或画质/音频异常时试；与 `hdmi_group/hdmi_mode` 是两个维度，别混 |
 | `gpu_mem=128` | GPU 显存（MB） | 调低给 CPU 腾内存，调高适合 GPU 负载 |
 | `enable_uart=1` | 使能串口控制台 | 见下一节，与显示无关但同在 config.txt |
 
@@ -184,7 +185,7 @@ systemctl get-default                        # 下次开机进哪个目标
 
 ### VNC（要图形界面但不接屏）
 
-`raspi-config` → Interface Options → VNC 启用，电脑侧客户端连 `<Pi 的 IP>:5900`（客户端与连接操作归 `rpi-ssh.md`）。Pi 侧要点：
+`raspi-config` → Interface Options → VNC 启用，电脑侧客户端连 `<Pi 的 IP>:5900`（电脑侧装 RealVNC Viewer 并按 IP 直连，归 `rpi-ssh.md`）。Pi 侧要点：
 
 - `[待验证]` Bookworm 起后端是 **wayvnc**（Wayland），需要图形会话真的在跑，也就是必须保持 Desktop 模式——这与上面「切 CLI」互斥，两者只能选一个。
 - `[待验证]` 较旧版本用 x11vnc，行为不同。
@@ -209,6 +210,7 @@ grep -v '^#' /boot/firmware/config.txt | grep .  # 当前生效配置（路径�
 vcgencmd get_mem gpu                             # GPU 显存实际分配
 vcgencmd measure_temp                            # 温度
 vcgencmd get_throttled                           # 是否被限速/限流，0x0 最健康
+systemctl list-units --type=target --state=active  # 当前活跃的 target，确认是否真在 multi-user（图形 target 是否在跑同一看这里）
 ```
 
 「改了没生效」九成是忘重启；「接屏黑屏」先分辨是屏/线的问题还是 Pi 真没输出，若动过 `hdmi` 或 tvout 相关项就先把 config.txt 恢复原状再判。
@@ -275,6 +277,31 @@ vcgencmd get_throttled                           # 是否被限速/限流，0x0 
 - 公钥登录在 Pi 侧的落点：公钥进 `<用户>~/.ssh/authorized_keys`，目录 `700`、文件 `600`，属主是该用户本身。权限不对时 sshd 会**静默拒绝公钥**、退回密码提示，看起来像「公钥没生效」。核查：`sudo ls -ld ~/.ssh ~/.ssh/authorized_keys`。
 - 关闭密码登录（`/etc/ssh/sshd_config` 里 `PasswordAuthentication no`）的顺序是硬约束：**先在串口或本地控制台留着一条能改回来的通道**，再用新会话验公钥能进；只改完就断开当前会话，一旦公钥没生效就只能走串口救砖。改后 `sudo systemctl restart ssh`。`[待验证]` 部分镜像还有 `sshd.service` 命名差异，`systemctl status ssh sshd` 两个都看一眼。
 - 电脑侧的操作全部归 `rpi-ssh.md`：客户端选择与 PATH 差异、`~/.ssh/config` 的 `Host pi` 别名、必须显式写 `User`、known_hosts 预置、密钥复用与不启用 ssh-agent、公钥推送的具体命令、scp/WinSCP、PuTTY 串口参数。本文不重复，避免两处改一处漏改。
+
+## 网页终端 ttyd（Pi 侧）
+
+电脑或手机浏览器连的是这一段；消费侧约束（要走网络、默认无密码）归 `rpi-ssh.md`。
+
+- `[待验证]` 安装：`sudo apt install ttyd`。本仓无任何实测，`rpi-ssh.md` 的「是否留档 ttyd」一条以此节是否存在为前提。
+- `[待验证]` 起一次性终端：`ttyd -p 7681 -W bash`（`-W` 允许输入，否则只读）；浏览器开 `http://<Pi 的 IP>:7681`。
+- `[待验证]` 常驻用 systemd unit，端口占用与防火墙同样在这台机器上处理：
+
+  ```ini
+  [Unit]
+  Description=ttyd web terminal
+  After=network.target
+
+  [Service]
+  ExecStart=/usr/bin/ttyd -p 7681 -W bash
+  Restart=on-failure
+  User=pi
+
+  [Install]
+  WantedBy=multi-user.target
+  ```
+
+  `User=pi` 要与实际账户一致，账户基线未落实前不要启用（见「镜像与默认账户基线」）。
+- 默认**无认证**，只在受信局域网内开，不做公网映射；不需要时 `sudo systemctl disable --now ttyd` 并删 unit。
 
 ## 排障顺序
 
@@ -369,12 +396,14 @@ Pi 侧三个必查点：
 
 ## 与其他文档的分工
 
-- `rpi-ssh.md` —— 电脑侧主干：客户端与 `~/.ssh/config`、known_hosts、公钥推送命令、scp/WinSCP、PuTTY 与串口终端参数。
+- `rpi-ssh.md` —— 电脑侧主干：客户端与 `~/.ssh/config`、known_hosts、公钥推送命令、scp/WinSCP、PuTTY 与串口终端参数、RealVNC Viewer。
 - `rpi-gpio-pinout.md` —— 40 针完整引脚表与电气参数；本文只列串口那三根线。
 - `rpi-3b-hardware.md` —— SoC 规格、功耗、型号选型与上手清单。
-- `rpi-headless-access.md`、`rpi-display-headless.md` —— 本次 A1 合稿的来源，内容已并入本文（串口与 SSH 的电脑侧段落除外，归 `rpi-ssh.md`）。两文件暂不删除，理由见窗口记录。
+- `rpi-headless-access.md`、`rpi-display-headless.md` —— A1 合稿的来源，内容已全部并入本文与 `rpi-ssh.md`，两文件已由编排会话删除。文内若再出现同名提法，属历史记录。
 
 ## 状态
+
+- 2026-10-15（编排会话收尾）：补 `hdmi_drive=2`、`systemctl list-units --type=target --state=active` 两条来自 `rpi-display-headless.md` 的条目；新增「网页终端 ttyd（Pi 侧）」节（安装、`ttyd -p 7681 -W bash`、systemd 常驻），关掉 `rpi-ssh.md` 把安装推给本文却无处可查的裂缝；VNC 一节的客户端指向改为 RealVNC Viewer。**两个来源文件（`rpi-headless-access.md`、`rpi-display-headless.md`）内容归并完毕后删除。**本条未新增任何实测：源稿里 `vcgencmd get_gpu_mem` 与 `hdmi=0` 两条按键名正确性判给主干现写法（`get_mem gpu`、`hdmi_force_hotplug=1`），属文档内部择一，不是实测结论。
 
 - 2026-10-15（A1 合稿）：本文升为 Pi 侧主干，吸收 `rpi-display-headless.md` 全文与 `rpi-headless-access.md` 的 Pi 侧段落，新增「镜像与默认账户基线」「boot 分区配置文件」「显示输出与无头模式」「串口控制台」「与其他文档的分工」五节，排障顺序补第 0 步（先用串口分辨系统是否在跑）。电脑侧段落（PuTTY/scp/`~/.ssh/config`）按端分界移交 `rpi-ssh.md`，本文原有的同名快照小节已删——`rpi-ssh.md` 有带 `[事实]` 的等价内容。
 - 2026-10-15（A1）：两处已知分歧按约定**双方都保留并标 `[待验证]`**，未择一——`nmcli ipv4.dns` 多值分隔（逗号加引号 vs 空格），以及新镜像默认账户与 SSH 是否预置（`pi`/`raspberry` 首登 vs Imager 自设且默认无 SSH），并各配了「执行后回读」的判别方法。另把显示篇里 4 处我无把握的键名/默认值（`hdmi=0`、`enable_tvout=1`、3B 是否默认不启用 KMS、`gpu_mem` 默认 76）单列为存疑待核清单，核实前不得使用。

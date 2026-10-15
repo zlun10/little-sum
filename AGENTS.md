@@ -38,6 +38,8 @@
 - 编排会话可代 worker 提交其 worktree 内未跟踪的 `.ai/contexts/<窗口标识>.md`：只在所属 worktree 内按明确路径 `git add` 后提交，不改写文件内容，不处理他人已跟踪的改动。理由是该文件若先由 `main` 建为同名跟踪文件，worker 的 `git merge main` 会被 git 拒绝，窗口卡死。
 - 用户说「同步所有 tree」时，在主 worktree 执行 `sh scripts/sync-agents.sh`，固定两步：先收——代提交各窗口未跟踪的 `.ai/contexts/<分支>.md`，再把各分支已提交内容 merge 进 `main`（冲突则 `git merge --abort`，`main` 不变）；后放——对每个窗口 `git merge --ff-only main`。他人的其他未提交改动只报 WARN 不代处置；`main` 工作区不干净时脚本退出码 2，不做任何合并。
 - 编排会话的结论只写 `.ai/current.md` 与 `.ai/timeline.md`，不改他人 worktree 内的 context 内容；反向传递靠窗口 `git merge main`，同机共享对象库，无需 fetch 或 push。
+- 跨文件的一致性活（合稿、去重、分歧择一）由编排会话在 `main` 做，`docs/` 默认归它改——只有 main 同时看得见全部文档；派给窗口的活限于两类：实机验证（需要设备在场，产出实测清单与结论）和专章撰写（只写自己那一篇）。
+- 窗口动 `docs/` 下的文件前，在本窗口 `.ai/contexts/<窗口标识>.md` 写一行认领 `- 正在改：docs/pi/<文件名>.md`，同一时间只认领一个文件，收尾时删掉该行；两个窗口认领同一文件时 `scripts/check-agents.sh` 报 FAIL。
 - 窗口每次开始新任务前先 `git merge main`，保持约定与校验脚本最新。
 - 一个窗口同一时间只推进一个任务；不得用 `git stash`、`git checkout -- .`、`git reset --hard`、`git clean -fd` 处置其他窗口的改动。
 - 关闭窗口时才清理：确认任务已合入 `main` 后执行 `git worktree remove "../<窗口标识>-worktree"` 与 `git branch -d <窗口标识>`。

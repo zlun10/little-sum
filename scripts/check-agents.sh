@@ -7,6 +7,7 @@
 #   5 linked worktree 的当前分支有同名 context 文件
 #   6 .ai/contexts 下不得分层存放
 #   7 文档落点：仓库根只留四个入口文件，.ai/ 只留 current.md 与 timeline.md
+#   8 文档认领：context 里的「正在改：<路径>」不得被两个窗口同时声明
 # 主 worktree 运行时另列出各 linked worktree 中尚未归并的 context 文件（INFO，不判违规）。
 set -u
 
@@ -129,6 +130,44 @@ if [ "$linked" = 0 ]; then
       fi
     done
   done < "$tmp_paths"
+fi
+
+# 8 文档认领：同一文件被两个及以上窗口声明「正在改」即冲突。
+# 同一窗口的 context 在主 worktree 与其 worktree 内可能各有一份（合稿前后），按「窗口+路径」去重后再判冲突。
+tmp_claims=$(mktemp) || exit 2
+trap 'rm -f "$tmp_paths" "$tmp_pairs" "$tmp_ctx" "$tmp_claims"' EXIT HUP INT TERM
+tab=$(printf '\t')
+collect_claims() {
+  grep -Eo '正在改：[^[:space:]、,，]+' "$2" | sed 's|^正在改：||' | while IFS= read -r cpath; do
+    printf '%s%s%s\n' "$cpath" "$tab" "$1"
+  done
+}
+: > "$tmp_claims"
+for f in .ai/contexts/*.md; do
+  [ -f "$f" ] && collect_claims "$(basename "$f" .md)" "$f" >> "$tmp_claims"
+done
+while IFS= read -r p; do
+  if [ -z "$p" ]; then continue; fi
+  for f in "$p"/.ai/contexts/*.md; do
+    [ -f "$f" ] || continue
+    collect_claims "$(basename "$f" .md)" "$f" >> "$tmp_claims"
+  done
+done < "$tmp_paths"
+sort -u "$tmp_claims" -o "$tmp_claims"
+
+if [ ! -s "$tmp_claims" ]; then
+  printf 'INFO  无文档认领记录\n'
+else
+  cut -f1 "$tmp_claims" | sort -u > "$tmp_ctx"
+  while IFS= read -r path; do
+    who=$(awk -F'\t' -v p="$path" '$1==p { print $2 }' "$tmp_claims" | sort -u | tr '\n' ' ')
+    n=$(printf '%s' "$who" | wc -w)
+    if [ "$n" -gt 1 ]; then
+      report FAIL "同一文件被 $n 个窗口认领: $path → $who"
+    else
+      report PASS "认领唯一: $path → $who"
+    fi
+  done < "$tmp_ctx"
 fi
 
 if [ "$fail" = 1 ]; then

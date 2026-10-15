@@ -22,50 +22,31 @@
 | USB | 4 × USB 2.0,共用一个 480 Mb/s 控制器 |
 | 显示 | 1 × 全尺寸 HDMI(1080p60 / 4K30) |
 | 音视频 | 1 × 3.5 mm 四极复合音频视频接口 |
-| GPIO | 40 针排针(27 个可用 GPIO 引脚,GPIO0–GPIO27,其中 GPIO5 在针 21/29 重复出现) |
+| GPIO | 40 针排针 J8。引脚对照、可用数量与电气限制一律见第 3 节指向的 [`rpi-gpio-pinout.md`](./rpi-gpio-pinout.md)，本文不重复计数 |
 | 供电 | Micro-USB,官方建议 5 V / 2.5 A |
 | 尺寸 / 重量 | 85 × 56 mm / 约 45 g |
 | 安装孔位 | 与 Pi 1 / Pi 2 完全一致,固定孔间距 64 mm |
 
 **内存分配**:1 GB 并非全部给 CPU。GPU 显存大小由 `config.txt` 的 `gpu_mem=` 决定,默认值随镜像版本变化——旧版 Raspbian 常为 192 MB,新版改用 VC4/Mesa 驱动后约 76 MB。用 `vcgencmd get_config int gpu_mem` 查实际值;纯 headless 服务可进一步下调,把内存让给用户空间。
 
-## 3. GPIO 引脚表
+**规格表里有四行与 `rpi-network.md` 冲突，本文不改写、只并列**（`[待验证]`，两条线索都指向本表可能把 3B+ 的参数当成了 3B）：
 
-实际的代码控制方式(lgpio / pinctrl / libgpiod)见 [GPIO 控制速查](./rpi-gpio-control.md),其中还包括通过 SWD 控制 CW32 的 GPIO。
+| 本表写法 | `rpi-network.md` 写法 | 上板后的判据 |
+|---|---|---|
+| 千兆以太网，实际约 300 Mb/s | 板载以太网为 **100M**，经 USB 2.0 挂在 smsc95xx 上 | `ethtool eth0 \| grep -i speed`、`dmesg \| grep -i smsc95xx` |
+| 蓝牙 4.1，**无 BLE** | 蓝牙与 WiFi 同在 BCM43430 合一芯片 | `hciconfig -a` 看 features 里有没有 `BLE` |
+| 无线芯片 BCM43438 | BCM43430 | `dmesg \| grep -iE 'brcm\|4343'` |
+| HDMI 支持 4K30 | 未主张 4K（VideoCore IV 一代） | `tvservice -c`、`tvservice -a CEA` 看支持的模态 |
 
-逻辑电平为 **3.3 V**,不是 5 V,5 V 传感器直连会烧板子。电源与接地针的分布不是简单奇偶规律:3.3 V 在针 **1、17**,5 V 在针 **2、4**,GND 在针 **6、9、14、20、25、30、34、38、39**。其余为 GPIO。
+裁决前，涉及带宽、蓝牙共存与分辨率的推断一律以 `rpi-network.md` 的保守值为准（它给的 USB 带宽与 SDIO 归属结论不会影响接线与供电判断）。第 7 节第 1 条「千兆网口不真千兆」与本表同源，一并待核。
 
-| 物理针 | GPIO | 功能 | 物理针 | GPIO | 功能 |
-| --- | --- | --- | --- | --- | --- |
-| 1 | — | 3V3 | 21 | GPIO5 | GPCLK1 |
-| 2 | — | 5V | 22 | GPIO25 | GPIO25(PWM) |
-| 3 | GPIO2 | I²C1 SDA | 23 | GPIO11 | SPI0 SCLK |
-| 4 | — | 5V | 24 | GPIO8 | SPI0 CE0 |
-| 5 | GPIO3 | I²C1 SCL | 25 | — | GND |
-| 6 | — | GND | 26 | GPIO7 | SPI0 CE1 |
-| 7 | GPIO4 | GPCLK0 | 27 | GPIO0 | ID_SD(备用 I²C SDA) |
-| 8 | GPIO14 | UART0 TXD | 28 | GPIO1 | ID_SC(备用 I²C SCL) |
-| 9 | — | GND | 29 | GPIO5 | GPIO5(PWM) |
-| 10 | GPIO15 | UART0 RXD | 30 | — | GND |
-| 11 | GPIO17 | GPIO17 | 31 | GPIO6 | GPIO6 |
-| 12 | GPIO18 | GPIO18(PWM) | 32 | GPIO12 | GPIO12(PWM) |
-| 13 | GPIO27 | GPIO27 | 33 | GPIO13 | GPIO13 |
-| 14 | — | GND | 34 | — | GND |
-| 15 | GPIO22 | GPIO22 | 35 | GPIO19 | GPIO19(PWM1) |
-| 16 | — | 3V3 | 36 | GPIO16 | GPIO16 |
-| 17 | — | 3V3(1.3 版起新增) | 37 | GPIO26 | GPIO26 |
-| 18 | GPIO10 | SPI0 MOSI | 38 | — | GND |
-| 19 | GPIO9 | SPI0 MISO | 39 | — | GND |
-| 20 | — | GND | 40 | GPIO21 | GPIO21 |
+## 3. GPIO 与引脚表：本文不再维护
 
-**常用总线速查**
+40 针的完整对照、3V3/5V/GND 分布、逻辑电平与供电限制、总线速查、三套编号与硬件 PWM 引脚，全部以 [`rpi-gpio-pinout.md`](./rpi-gpio-pinout.md) 为准；控制方式（gpiozero / lgpio / pinctrl / libgpiod / C）与通过 SWD 控制 CW32 的 GPIO 在同一篇第七节之后。
 
-- UART0:针 8(TX)/ 针 10(RX),首次上电默认分配给串口控制台,需要手动从 console 释放给应用。
-- I²C:针 3(SDA)/ 针 5(SCL);备用总线在针 27 / 28。
-- SPI0:针 19(MISO)/ 23(SCLK)/ 24(CE0)/ 18(MOSI),针 26 为 CE1。
-- PWM:针 12、18、22、29、35(硬件 PWM)。
+本节原先自带一张引脚表和一段电气说明，与 GPIO 篇在**针 16、SPI0 MOSI、针 38、可用 GPIO 计数、硬件 PWM 引脚**五处对不上（例如把 GND 列成 9 个含针 38、把 GPIO10 当成针 18 的 SPI0 MOSI、把 3V3 放在针 16）。GPIO 篇的计数（28 引出、扣 ID_SD/ID_SC 后 26 可用、GND 8 个）与 40 针排针的定义自洽，判为正确侧，故整段删除——**这是文档内部的择一，不是实测结论**。接板子前仍要用 `pinout` 命令或万用表找 GND 复核，方法见 GPIO 篇第三节。
 
-**GPIO 供电限制**:板载 3V3 排针只保证约 50 mA,5V 引脚有总电流限制且与 USB 供电共享。舵机、继电器、电机、灯带等必须外部供电并共地,不能从 GPIO 取电。
+只在本节出现过、GPIO 篇没有的一条限制保留在这里：**5V 引脚有总电流限制，且与 USB 口供电共享**；舵机、继电器、电机、灯带一律外部供电并与 Pi 共地。`[待验证]`
 
 ## 4. 供电与功耗
 

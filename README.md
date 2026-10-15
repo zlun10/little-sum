@@ -4,7 +4,12 @@
 
 ## 入口
 
-- 树莓派 3B 参考文档：`docs/pi/`（硬件与选型、GPIO 引脚与控制、无头接入与显示、网络）
+- 树莓派 3B 参考文档：`docs/pi/`，四篇主干
+  - `rpi-3b-hardware.md` — SoC 规格、功耗、`gpu_mem`、选型与上手清单
+  - `rpi-gpio-pinout.md` — GPIO 主干：引脚表、电气红线、Python/命令行/C 控制路径、SWD 与 CW32
+  - `rpi-network.md` — Pi 侧主干：镜像与账户基线、config.txt/cmdline.txt、网络与取址、显示与无头、串口使能、sshd、ttyd、VPN 出网
+  - `rpi-ssh.md` — 电脑侧主干：SSH 客户端与 `~/.ssh/config`、认脸、递钥、调用契约、传文件、串口终端参数
+- 文档落点由 `scripts/check-agents.sh` 第 7 条断言机检：文档只准放 `docs/`，仓库根只留四个入口文件
 - 协作与并行窗口约定：`AGENTS.md`
 - 跨会话现状与历史结论：`.ai/current.md`、`.ai/timeline.md`、`.ai/contexts/<窗口标识>.md`
 - 校验：`sh scripts/check-agents.sh`（违规退出码 1）
