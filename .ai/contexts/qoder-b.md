@@ -5,11 +5,14 @@
 - branch: qoder-b
 - base: c488233
 
-## 树莓派与电脑的通讯（2026-10-15，进行中）
+## 电脑侧接入稿（A2 合稿，2026-10-15）
 
-- 交付：`docs/rpi-ssh.md`，范围仅通讯层，无执行代码。
-- 修正：v1 范围错位，主语写成两端混合视角、把对端（Pi 侧 sshd、`raspi-config`、权限检查）写成六层主链；用户一句「仅关注怎么与电脑通讯」即为整篇重写信号，v2 改以电脑侧为主语，对端内容降为附注。教训：动笔前先定「本文主语是谁」。
-- v2 新增：电脑侧现状实测表、契约放 `~/.ssh/config` 而非命令行、不依赖认证的端口探测、退出码 255 不可区分（需哨兵）、PATH/tty 三条判据、`PasswordAuthentication=no` 判真技巧、按端归属的失败表与「状态」段。每条标 `[事实]` / `[待验证]`。
-- 本机实测结论（2026-10-15，电脑侧，无需 Pi）：PATH 首位是 Git Bash 的 OpenSSH_9.9p1，另有 `System32` 的 9.5p2，两者共用同一份 `~/.ssh`（`userknownhostsfile` 已对比确认）；`~/.ssh/config` 不存在；默认解析 `user zheng`、`batchmode no`、`stricthostkeychecking ask`；`id_ed25519` 已存在且无口令；`ssh-agent` 服务 Disabled（无口令密钥，不需要 agent）；Git Bash `/dev/tcp` 与 PowerShell `Test-NetConnection` 均可用于端口探测。
-- 未验证：全文无任何对 Pi 的实测；v1 里凭记忆写的报错文本与「255 即 ssh 失败」的断言已在 v2 改正或降级为 `[待验证]`。
-- 待用户确认：对端工作目录是否按窗口标识隔离；验证入口是否落成 `scripts/` 断言脚本；「多 agent 远程执行」形态本身仍未确认，却是 v2 第 4 步与并发小节的前提。
+- 交付：`docs/pi/rpi-ssh.md` v3，电脑侧主干，吸收了 `rpi-headless-access.md` 的电脑侧段落（PuTTY 终端参数、COM 号识别、scp/WinSCP、PowerShell 版公钥推送、SSH 排查表、ttyd 与手机客户端）；接线、`config.txt`/`cmdline.txt`、镜像与账户基线按端边界留给 Pi 侧稿，本窗口不写。
+- 修正（v1→v2 的教训，保留）：v1 主语错位，把对端 Pi 侧配置写成六层主线；用户一句「仅关注怎么与电脑通讯」即为整篇重写信号。动笔前先定「本文主语是谁」，对端内容只作附注。
+- 端边界带来的结构决策：`HostName` 取值（IP vs `.local`）是未裁决分歧，处置是把分歧隔离在 config 一处，命令行永远只写 `ssh pi`，其余章节不因此抖动。同类隔离也用于 scp（不再照抄旧稿的 `pi@raspberrypi.local`）。
+- 顺序约束（从旧稿锁死警告具体化到电脑侧）：对端关闭密码登录必须晚于 `ssh -o PasswordAuthentication=no pi 'echo ok'` 判真通过；否则退路只剩串口，而串口依赖 PuTTY（本机未装）+ 对端接线。
+- 本机实测新增（与 Pi 无关，可直接引用）：系统自带 `System32\OpenSSH\` 含 `scp/sftp/ssh-keyscan`；PuTTY、`plink`、WinSCP 均未安装；本机已有 COM3/COM19/COM22，故认口必须插拔对照设备管理器；Bonjour 服务未安装；解析失败与端口无监听两种场景下两客户端均返回退出码 255。沿用 v2 实测：两客户端共用同一份 `~/.ssh`、默认 `user zheng` + `batchmode no` + `stricthostkeychecking ask`、`id_ed25519` 无口令、`ssh-agent` Disabled、`/dev/tcp` 与 `Test-NetConnection` 可用。
+- 标记体系：`[本机实测]` / `[待对端实测]` / `[分歧未裁决]` 三档。本轮**未把任何 `[待对端实测]` 升为实测**，全文仍无一条对 Pi 的实测。旧稿内容默认降为 `[待对端实测]`。
+- 未裁决分歧并列四条（主机名 vs IP、新镜像默认账户与 SSH 是否预置、串口是否引入 PuTTY/plink 依赖、ttyd 是否留档），写入文档第十一节，禁止互抄。
+- 首要未知：非交互 shell 的 PATH / tty 差异方向（决定 agent 调用是否统一包 `bash -lc`）；次为 `accept-new` 对真服务器、tmux 无 tty 下 `-A`、本机 mDNS 能否解析 `.local`。
+- 本窗口未做：不动 `rpi-headless-access.md`（是否删除由编排会话归并时定）、不改 `current.md`、不写 `timeline.md`（任务未实机收尾）、不 push、不合 `main`。
