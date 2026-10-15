@@ -17,10 +17,10 @@
 | GPU | VideoCore IV @ 400 MHz,与 Pi 1 / Pi 2 同款 |
 | 内存 | 1 GB LPDDR2 |
 | 存储 | microSD 卡槽,无内置 eMMC,无 PIO、无 RTC |
-| 有线网络 | 1 × 千兆以太网(经 USB 2.0 总线,实际约 300 Mb/s 上限) |
-| 无线网络 | 802.11n 2.4 GHz Wi-Fi + 蓝牙 4.1(Broadcom BCM43438 合一芯片,无 BLE) |
+| 有线网络 | 1 × 以太网 10/100 Base-T(SoC 侧 MAC 为 100 Mb/s，经 USB 2.0 上联到板载 SMSC LAN9514 芯片) |
+| 无线网络 | 802.11n 2.4 GHz Wi-Fi + 蓝牙 4.1，Broadcom BCM43438 合一芯片；BLE 支持存疑，见下方裁决 |
 | USB | 4 × USB 2.0,共用一个 480 Mb/s 控制器 |
-| 显示 | 1 × 全尺寸 HDMI(1080p60 / 4K30) |
+| 显示 | 1 × 全尺寸 HDMI。官方产品页只写 "Full size HDMI" 未给分辨率，`[待验证]` |
 | 音视频 | 1 × 3.5 mm 四极复合音频视频接口 |
 | GPIO | 40 针排针 J8。引脚对照、可用数量与电气限制一律见第 3 节指向的 [`rpi-gpio-pinout.md`](./rpi-gpio-pinout.md)，本文不重复计数 |
 | 供电 | Micro-USB,官方建议 5 V / 2.5 A |
@@ -29,16 +29,27 @@
 
 **内存分配**:1 GB 并非全部给 CPU。GPU 显存大小由 `config.txt` 的 `gpu_mem=` 决定,默认值随镜像版本变化——旧版 Raspbian 常为 192 MB,新版改用 VC4/Mesa 驱动后约 76 MB。用 `vcgencmd get_config int gpu_mem` 查实际值;纯 headless 服务可进一步下调,把内存让给用户空间。
 
-**规格表里有四行与 `rpi-network.md` 冲突，本文不改写、只并列**（`[待验证]`，两条线索都指向本表可能把 3B+ 的参数当成了 3B）：
+### 2.1 与 `rpi-network.md` 的四行冲突：已裁决
 
-| 本表写法 | `rpi-network.md` 写法 | 上板后的判据 |
+裁决依据是 Raspberry Pi 官方产品页 `raspberrypi.org/products/raspberry-pi-3-model-b` 的 Specification 段（原文：`100 Base Ethernet`、`BCM43438 wireless LAN and Bluetooth Low Energy (BLE) on board`），对照 2018-03 的 Pi 3B+ 发布资料（官方口径：网口「由 100 Mb/s 升到 USB 2.0 上的 300 Mb/s 千兆」，蓝牙「由 4.1 升到 4.2 并加入 BLE」）。新的 `raspberrypi.com` 产品站已下架 3B 页面（404），当前在售目录只有 Pi 4 / Pi 5 / Zero 2 W 等，故上列旧站页面是目前唯一可引的官方规格页。
+
+**结论：不是单向污染。两行是本篇错，两行本篇对。**
+
+| 行 | 裁决 | 依据 |
 |---|---|---|
-| 千兆以太网，实际约 300 Mb/s | 板载以太网为 **100M**，经 USB 2.0 挂在 smsc95xx 上 | `ethtool eth0 \| grep -i speed`、`dmesg \| grep -i smsc95xx` |
-| 蓝牙 4.1，**无 BLE** | 蓝牙与 WiFi 同在 BCM43430 合一芯片 | `hciconfig -a` 看 features 里有没有 `BLE` |
-| 无线芯片 BCM43438 | BCM43430 | `dmesg \| grep -iE 'brcm\|4343'` |
-| HDMI 支持 4K30 | 未主张 4K（VideoCore IV 一代） | `tvservice -c`、`tvservice -a CEA` 看支持的模态 |
+| 以太网 | **`rpi-network.md` 对，本篇错** | 官方规格页写 "100 Base Ethernet"。3B 的 SoC 侧 MAC 是 10/100，经 USB 2.0 上联到板载 SMSC LAN9514 芯片（Linux 侧驱动即 `smsc95xx`），与 `rpi-network.md` 的接口盘点一致。「千兆但受 USB 2.0 限制、实测约 300 Mb/s」是 **3B+** 的口径——3B+ 才换上 LAN7515 真千兆 MAC，同时仍受 USB 2.0 制约。**本表原写法确实混入了 3B+ 参数。** |
+| 无线芯片 | **本篇对，`rpi-network.md` 错** | 官方规格页明确写 BCM43438。**BCM43430 是 3B+ / Zero W 的芯片**，不是 3B。`rpi-network.md` 接口盘点与排障段共 3 处引用 BCM43430，需编排会话跨稿同步改。 |
+| 蓝牙 BLE | **未能裁决，留存疑** | 官方规格页字面写 "Bluetooth Low Energy (BLE) on board"，但同源的 3B+ 发布资料把 BLE 说成**相对 3B 的升级**（3B 是 4.1、3B+ 才是 4.2 + BLE）。两处官方表述自相矛盾，规格页那句很可能是文案错误。本篇原写的「无 BLE」因此**不能升级为事实**，官方页也不能直接采信。板子不在场，手册层裁不了。 |
+| HDMI 分辨率 | **未能裁决，本篇应降级** | 官方规格页只写 "Full size HDMI"，未给分辨率，也未提 4K。`rpi-network.md` 那句「未主张 4K」本身不是主张，不构成冲突。本篇原写的「4K30」在本轮**未找到官方页面依据**，已从规格表撤下。 |
 
-裁决前，涉及带宽、蓝牙共存与分辨率的推断一律以 `rpi-network.md` 的保守值为准（它给的 USB 带宽与 SDIO 归属结论不会影响接线与供电判断）。第 7 节第 1 条「千兆网口不真千兆」与本表同源，一并待核。
+前两行属文档内部择一，依据是官方页面原文；后两行是 `[待验证]`，禁止互抄与升格。板子到位后按此表复核：
+
+| 待验项 | 命令 |
+|---|---|
+| 以太网速率与驱动归属 | `ethtool eth0 \| grep -i speed`、`dmesg \| grep -i smsc95xx` |
+| 无线芯片型号 | `dmesg \| grep -iE 'brcm\|4343'` |
+| BLE 能力 | `btmgmt info`（看 LE 相关 feature 位；老镜像用 `hciconfig -a`） |
+| HDMI 可用模态 | `tvservice -c`、`tvservice -a CEA` |
 
 ## 3. GPIO 与引脚表：本文不再维护
 
@@ -78,10 +89,10 @@
 
 ## 7. 已知限制与常见坑
 
-1. **千兆网口不真千兆**:走 USB 2.0 总线,叠加其他 USB 流量后实测约 300 Mb/s,且高负载下吞吐波动大。
-2. **USB 总线共享**:4 个 USB 口共享 480 Mb/s,默认 USB 总供电约 600 mA;需要更多电流要在 `config.txt` 加 `max_usb_current=1`(部分固件支持)。
+1. **以太网只有 100 Mb/s，且不在 SoC 直连网口上**：`[事实]` 官方规格页写 "100 Base Ethernet"，3B 的 SoC 侧 MAC 是 10/100，上联走 USB 2.0 到板载 SMSC LAN9514 芯片。因此它与 4 个 USB-A 口共享同一条 480 Mb/s 总线，插大容量移动硬盘会同时拖慢有线吞吐。所谓「3B 是千兆、实测约 300 Mb/s」是 **3B+** 的口径，别套到 3B 上。`[待验证]` 实测速率需上板跑 `ethtool eth0`。
+2. **USB 总线共享**：4 个 USB 口共享 480 Mb/s，默认 USB 总供电约 600 mA；需要更多电流要在 `config.txt` 加 `max_usb_current=1`(部分固件支持)。
 3. **没有 5V 逻辑兼容**:3.3 V 电平直连 5 V 传感器可能损坏,需要电平转换。
-4. **只有蓝牙 4.1,没有 BLE**:对需要低功耗 BLE 的场景要外接模块。
+4. **蓝牙 4.1，BLE 能力存疑**：`[待验证]` 官方规格页字面写支持 BLE，但 3B+ 发布资料把 BLE 列为相对 3B 的升级，两处官方表述矛盾。在板上用 `btmgmt info` 确认前，不要假设这台机器能做 BLE 广播；需要低功耗 BLE 的场景按「要外接模块」准备。
 5. **无 RTC**:断电后时间回退到 1970 年,做日志和定时任务必须配 NTP。
 6. **散热**:连续满载建议加散热片,官方建议不要长期贴着封闭外壳运行。
 7. **microSD 卡寿命**:频繁日志写入会磨损卡,生产环境优先配日志轮转或改用 USB 存储。
@@ -91,8 +102,8 @@
 
 | 型号 | 发布时间 | CPU | RAM | 网络 | 备注 |
 | --- | --- | --- | --- | --- | --- |
-| Pi 3 Model B | 2016-02 | 四核 A53 @ 1.2 GHz | 1 GB | 标称千兆(实测约 300 Mb/s)+ 802.11n | 本文对象 |
-| Pi 3 Model B+ | 2018-03 | 四核 A53 @ 1.2 GHz | 1 GB | 真千兆 + 802.11ac | 支持 PoE,官方默认 64 位 |
+| Pi 3 Model B | 2016-02 | 四核 A53 @ 1.2 GHz | 1 GB | **100 Mb/s**（USB 2.0 上联）+ 802.11n 2.4G | 本文对象 |
+| Pi 3 Model B+ | 2018-03 | 四核 A53 @ 1.2 GHz | 1 GB | 千兆但受 USB 2.0 限制约 300 Mb/s + 802.11ac | 支持 PoE，官方默认 64 位 |
 | Pi Zero 2 W | 2020-10 | 四核 A53 @ 1 GHz | 512 MB | 2.4 GHz Wi-Fi | 低功耗,约 1 W |
 | Pi 4 Model B | 2018-06 | 双核 A72 @ 1.5 GHz | 2 / 4 / 8 GB | 真千兆 + 802.11ac | 双 micro-HDMI,4K60 |
 | Pi 5 | 2023-10 | 四核 A76 @ 2.4 GHz | 4 / 8 / 16 GB | 真千 gigabit + 802.11ax | PCIe、需 27W 电源 |
@@ -100,7 +111,7 @@
 **结论**
 
 - **新买不要选 3B**。同价位的 3B+ 或 Pi 4 全面胜出,Pi 5 适合需要性能的负载。
-- **3B 仍然值得用的场景**:需要与 Pi 1/2 现成外壳、HAT 扩展板完全兼容;手头已有设备升级内存和网口;实验室或教学中要复现以 Pi 3 为目标平台的既有教程。
+- **3B 仍然值得用的场景**:需要与 Pi 1/2 现成外壳、HAT 扩展板完全兼容;手头已有设备想要 64 位 CPU 与板载 Wi-Fi;实验室或教学中要复现以 Pi 3 为目标平台的既有教程。注意网口别当升级点——3B 的以太网和 Pi 2 同为 100 Mb/s。
 
 ## 9. 上手清单
 
@@ -113,7 +124,12 @@
 
 ## 10. 参考来源
 
-- 官方产品页与文档:raspberrypi.com/documentation
-- GPIO 引脚布局:raspberrypi.com/documentation/raspberry-pi/hardware/raspberry-pi.html
-- 功耗基准:raspberrypi.com/news/measuring-raspberry-pi-current-consumption
+- **3B 官方规格页(本次裁决主依据)**：`raspberrypi.org/products/raspberry-pi-3-model-b` 的 Specification 段。原文含 `100 Base Ethernet`、`BCM43438 wireless LAN and Bluetooth Low Energy (BLE) on board`、`Full size HDMI`。注意 `raspberrypi.com` 新站的 3B 页面已下架(404)。
+- **3B+ 发布资料(对照用)**：2018-03 Pi 3 Model B+ 发布稿——网口由 100 Mb/s 升为 USB 2.0 上的 300 Mb/s 千兆，蓝牙由 4.1 升为 4.2 并加入 BLE。用来证明「千兆 + 300 Mb/s」「BLE」两条都属于 3B+ 口径。
+- GPIO 引脚布局：raspberrypi.com/documentation/raspberry-pi/hardware/raspberry-pi.html（权威表在 [`rpi-gpio-pinout.md`](./rpi-gpio-pinout.md)）
+- 功耗基准：raspberrypi.com/news/measuring-raspberry-pi-current-consumption
 - 本文为个人笔记整理,固件细节以官方文档为准;下单或改动硬件前建议核对最新 revision 差异。
+
+## 修订记录
+
+- 2026-10-15：**裁决第 2 节与 `rpi-network.md` 的四行冲突**。方向与最初线索相反：不是「本表整体混入 3B+」，而是**两行各错一半**——以太网与 HDMI 是本表错（沿用 3B+ 口径），无线芯片是 `rpi-network.md` 错（把 3B+ 的 BCM43430 写成了 3B）。蓝牙 BLE 一行因官方页面与 3B+ 发布资料互相矛盾，判为未能裁决，连同 HDMI 分辨率一并留在 `[待验证]`，未升格为事实。同步改掉第 7 节第 1、4 条与第 8 节选型表两行同源结论。`rpi-network.md` 那 3 处 BCM43430 需编排会话跨稿同步，本轮未越界改。**全文仍无任何板上实测结论。**
