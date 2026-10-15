@@ -109,11 +109,12 @@ sudo cp /boot/firmware/cmdline.txt /boot/firmware/cmdline.txt.bak
 
   ```bash
   sudo nmcli con mod "<SSID>" ipv4.method manual ipv4.addresses 192.168.1.50/24 \
-    ipv4.gateway 192.168.1.1 ipv4.ignore-auto-dns yes
+    ipv4.gateway 192.168.1.1 ipv4.dns "223.5.5.5 119.29.29.29" ipv4.ignore-auto-dns yes
   ```
 
-  多个 DNS 的分隔写法有两说，未实测，**都保留**：逗号并加引号 `ipv4.dns "223.5.5.5,119.29.29.29"`（本文原写法）；空格分隔 `ipv4.dns "192.168.1.1 223.5.5.5"`（`rpi-headless-access.md` 写法）。`[待验证]`
-  别靠读文档定分胜负，执行完立刻回读，两个地址都在才算写进去：`nmcli -f ipv4.dns,ipv4.addresses,ipv4.gateway con show "<SSID>"`。回读只剩一个或报 `unrecognized property`/参数多余，就换另一种分隔再试，并把结果记回本文。
+  多值分隔已按官方手册**裁决为空格（并加引号）**：NetworkManager 自带手册 nmcli-examples(7) 的「Adding an ethernet connection profile with manual IP configuration」一例写的就是 `nmcli con mod my-con-em1 ipv4.dns "8.8.8.8 8.8.4.4"`，同例还给出一条只加一个地址的追加式写法 `nmcli con mod my-con-em1 +ipv4.dns 1.2.3.4`。
+  原先并存的逗号写法不再进命令：官方属性参考 nm-settings-nmcli(5) 只在 `ipv4.addresses` 上明写「Multiple addresses can be separated by comma」，`ipv4.dns` 的属性描述只说 "Array of DNS servers"、没有给分隔符，所以逗号在 dns 上没有文档依据（`ipv4.addresses` 用逗号倒是有依据，两个属性的写法因此并不统一，别相互照抄）。
+  这仍是手册结论而非板上结果 `[待验证]`：执行后回读断言两个地址都在，`nmcli -f ipv4.dns,ipv4.addresses,ipv4.gateway con show "<SSID>"`。若空格写法只落进一个地址，改逐条追加 `+ipv4.dns`，并把实测结果记回本节。
 - 填错网关或 DNS 的表现是「SSH 通但 apt 失败」，与链路本身无关，别去查 WiFi。
 
 ### 排障（WiFi 专有，接在「排障顺序」的链路层之前）
@@ -145,21 +146,44 @@ sudo cp /boot/firmware/cmdline.txt /boot/firmware/cmdline.txt.bak
 | `framebuffer_width=1920` / `framebuffer_height=1080` | 固定 framebuffer 尺寸 | 无头截图、无头浏览器需要知道「虚拟屏幕」多大 |
 | `disable_overscan=1` | 去黑边 | 画面不铺满时用 |
 | `hdmi_drive=2` | 强制 HDMI 输出（含音频） | 来自 `rpi-display-headless.md`，长线缆或画质/音频异常时试；与 `hdmi_group/hdmi_mode` 是两个维度，别混 |
-| `gpu_mem=128` | GPU 显存（MB） | 调低给 CPU 腾内存，调高适合 GPU 负载 |
+| `gpu_mem=128` | GPU 显存（MB） | 默认值按**内存容量**而非机型：<1 GB 为 `64`，≥1 GB 为 `76`（3B 是 1 GB，故默认 `76`）。调低给 CPU 腾内存，调高适合 GPU 负载；官方明确警告 VideoCore 架构下调高无性能收益、反而可能有害，Pi 5 起本项无效 |
+| `hdmi_ignore_hotplug=1` | 假装没接显示器，**禁用 HDMI 输出** | 「永久不要 HDMI」的正解；官方原文：HDMI output will therefore be disabled, even if a monitor is connected。与上一行互为反向，同时写会相互抵消 |
+| `sdtv_mode=2` | 复合视频制式（3B 这代） | 默认 `0` = NTSC，`2` = PAL；配套键 `sdtv_aspect`（默认 `1` = 4:3）、`sdtv_disable_colourburst`。3B 的复合视频**默认可用**，见下面的核对结论 |
 | `enable_uart=1` | 使能串口控制台 | 见下一节，与显示无关但同在 config.txt |
 
 改动只在开机时读一次，**必须重启**才生效。
 
-表内每条的键名、作用与默认值都属 `[待验证]`（本机一次没跑过）。其中「没插线也当作已接显示」这一需求，源文档写的是 `hdmi=0`「禁用 HDMI」，本文改用 `hdmi_force_hotplug=1` 表达同一无头场景需求，`hdmi=0` 移到下面的待核清单——两者方向相反，别混用，落地前必须先确认到底要哪个。
+表内每条的作用与取值已对官方手册核对过（见下一节），但**没有一条经过板上实测**，整表仍属 `[待验证]`。「没插线也当作已接显示」用 `hdmi_force_hotplug=1`，「禁用 HDMI」用 `hdmi_ignore_hotplug=1`——源文档里那行 `hdmi=0` 不是合法键名，已弃用。
 
-### 存疑项（不得照抄，需查官方 config.txt 手册或实测后再定）
+### 手册核对结论（2026-10-15，只查文档，未上板）
 
-源文档还列了下面几项，我无法在没板子、没核手册的情况下背书，逐条给了探测方法：
+权威源只用两处：Raspberry Pi 官方文档（config.txt 页与 Legacy config.txt 页），以及 NetworkManager 自带的手册页源文件。以下结论是**文档核对**，不是实机测量；`[待验证]` 保留给板上行为。
 
-1. `hdmi=0` 用于「永久禁用 HDMI」——**键名存疑**。`[待验证]` 官方 config.txt 里我没把握存在裸 `hdmi` 键；无头省资源的实际需求通常由 `hdmi_force_hotplug` 反向控制或 `framebuffer_*` 满足。核实前不要用这一项。
-2. `enable_tvout=1` 启用板边 3.5mm 复合视频、且与 HDMI 硬件互斥——**适用机型存疑**。`[待验证]` 3B 这一代复合视频历史上走 `sdtv_mode` 一类键，`enable_tvout` 多见于较新机型。探测：`grep -in 'tvout\|sdtv' /boot/firmware/config.txt`，并在官方手册按机型查键名。
-3. 3B 默认不启用 KMS（`dtoverlay=vc4-kms-v3d`），Pi 4/400/5 才默认启用——**代际结论存疑**。`[待验证]` 探测：`grep -n 'vc4-kms-v3d\|vc4-fkms-v3d' /boot/firmware/config.txt`，注意被 `#` 注释掉的行不算启用；这条决定显示异常时该不该动 dtoverlay，必须先落实。
-4. 3B 的 `gpu_mem` 默认 `76`——`[待验证]` 探测：`vcgencmd get_mem gpu`。
+| # | 原存疑说法 | 结论 | 出处（站点 + 页/小节） |
+|---|---|---|---|
+| 1 | `hdmi=0` 用于永久禁用 HDMI | **键不存在，已弃用**。config.txt 与 Legacy config.txt 两页的键名列表里都没有裸 `hdmi` 键，`hdmi=0` 全文零命中。这一需求由 `hdmi_ignore_hotplug=1` 承担；反向需求（无头当作接了屏）由 `hdmi_force_hotplug=1` 承担 | Raspberry Pi 官方文档 *Legacy config.txt options → Legacy video options* 的 `hdmi_ignore_hotplug`、`hdmi_force_hotplug` |
+| 2 | `enable_tvout=1` 在 3B 上启用复合视频，且与 HDMI 硬件互斥 | **机型判断与源文档相反：3B 上这一项默认就是 `1`，不是需要打开的开关**。官方默认值表：Pi 4B 起的旗舰机型、CM4 起的计算模块、键盘机型默认 `0`，**其他所有机型默认 `1`**（3B 属后者，复合视频走板边 3.5mm AV 孔）。「启用复合会禁用 HDMI」以及 `enable_tvout` + `dtoverlay=vc4-kms-v3d,composite` + `vc4.tv_norm=` 那一整套是较新机型（KMS 路径）的说明；3B 这代的复合视频参数是 `sdtv_mode`/`sdtv_aspect`/`sdtv_disable_colourburst` | 官方文档 *config.txt → Video options → Composite video mode → `enable_tvout`*（含默认值表）；*Legacy video options → `sdtv_mode`* |
+| 3 | 3B 默认不启用 KMS（`vc4-kms-v3d`），Pi 4/400/5 才默认启用 | **官方文档没有给出按机型的 KMS 默认值，此条无法由手册裁决**，维持 `[待验证]`。查过的范围：config.txt 全部分节、Legacy config.txt 全部分节、*Configuration → Display/audio* 、*raspi-config* 页——均无「哪代机型默认启用哪条 dtoverlay」的陈述。唯一相邻的官方限定是 Legacy 页 HDMI 小节的 IMPORTANT：用 VC4 KMS 时整条显示链由 Linux 接管、那些 `hdmi_*` 旧键只对 legacy FKMS 与固件驱动生效——它恰好依赖本条要实测的结果（这台 3B 走的是哪条图形驱动路径），不能反过来当结论用 | 无结论；判据见下面的板上清单 |
+| 4 | `gpu_mem` 默认 `76` | **数值成立，但依据是内存容量而不是机型**：官方写「<1 GB 的机型默认 `64`，1 GB 及以上默认 `76`」，3B 恰好 1 GB，所以 `76`。附带两条：官方强调 VideoCore 下调高无性能收益、可能有害；Pi 5 起该组参数无效 | 官方文档 *Legacy config.txt options → Legacy memory options → `gpu_mem`* |
+
+核对用的具体页面（raspberrypi.com 的发布页对本机返回 403，改从官方仓库取同一份源文件逐条比对，内容与发布页同源）：
+
+- `raspberrypi/documentation` → `documentation/asciidoc/computers/legacy_config_txt/video.adoc`（发布页 raspberrypi.com/documentation/computers/legacy_config_txt.html 的 Legacy video options 一节；`hdmi_ignore_hotplug`、`hdmi_force_hotplug`、`sdtv_mode` 在此）
+- 同目录 `legacy_config_txt/memory.adoc`（Legacy memory options → `gpu_mem`）
+- 同目录 `config_txt/video.adoc`（config.txt → Video options → Composite video mode → `enable_tvout`，含机型默认值表）
+- 同目录 `config_txt/what_is_config_txt.adoc`（boot 分区路径 `/boot/firmware/`、改动只在重启后生效、`vcgencmd get_config int|str`、以及「部分 legacy 选项不再官方支持」的分界说明）
+- `NetworkManager/NetworkManager` → `man/nmcli-examples.xml`（nmcli-examples(7)）与 `src/nmcli/gen-metadata-nm-settings-nmcli.xml.in`（nm-settings-nmcli(5) 的属性描述源）
+- 未采信：搜索命中的博客与中文教程（键名与默认值彼此矛盾，按约定只作线索）
+
+### 仍需上板实测（本文档核对解决不了的）
+
+| 事项 | 板上判据 |
+|---|---|
+| 这台 3B 的图形驱动路径（KMS 是否默认启用）——决定上面 3 里那批 `hdmi_*` 旧键到底生效不生效 | `grep -n 'vc4-kms-v3d\|vc4-fkms-v3d' <config.txt 实际路径>`（`#` 注释行不算启用）、`ls /dev/dri`、`journalctl -b \| grep -i vc4` |
+| 镜像代际与默认账户/SSH 基线 | 「镜像与默认账户基线」那四条探测命令 |
+| `gpu_mem` 实际生效值（默认表是按容量推的，未在这块板上读过） | `vcgencmd get_mem gpu`，交叉核对 `vcgencmd get_config int` |
+| `nmcli` 静态配置后 DNS 是否两个都落盘（分隔符按官方示例选了空格） | 见「地址固定」小节的回读命令 |
+| 复合视频在 3B 上是否真的默认可输出（默认值 `1` 是文档结论） | 接 AV 线观察，或 `grep -in 'tvout\|sdtv' <config.txt>` 看有无显式覆盖 |
 
 ### 开机进命令行还是桌面（cmdline.txt / raspi-config）
 
@@ -200,6 +224,7 @@ systemctl get-default                        # 下次开机进哪个目标
 | 接了屏但分辨率认不对 | `hdmi_group=2` + `hdmi_mode=16` | 是 |
 | 画面有黑边 | `disable_overscan=1` | 是 |
 | 无头跑截图/浏览器 | `framebuffer_width/height` | 否 |
+| 接老电视/仅 AV 线（3B） | 复合视频默认已开，制式用 `sdtv_mode=2`（PAL） | 接电视 |
 | 内存不够 | 切 `multi-user.target`，最省 | 否 |
 
 ### 显示侧验证
@@ -213,7 +238,7 @@ vcgencmd get_throttled                           # 是否被限速/限流，0x0 
 systemctl list-units --type=target --state=active  # 当前活跃的 target，确认是否真在 multi-user（图形 target 是否在跑同一看这里）
 ```
 
-「改了没生效」九成是忘重启；「接屏黑屏」先分辨是屏/线的问题还是 Pi 真没输出，若动过 `hdmi` 或 tvout 相关项就先把 config.txt 恢复原状再判。
+「改了没生效」九成是忘重启；「接屏黑屏」先分辨是屏/线的问题还是 Pi 真没输出，若动过 `hdmi_ignore_hotplug`、`hdmi_force_hotplug` 或 `sdtv_*` 就先把 config.txt 恢复原状再判。查当前固件实际读到的值用 `vcgencmd get_config int`（列非零整数项），比回读文件更可靠——文件里有注释行。
 
 ## 串口控制台（救援通道）
 
@@ -403,6 +428,7 @@ Pi 侧三个必查点：
 
 ## 状态
 
+- 2026-10-15（V1 手册核对，本窗口）：显示侧 4 条存疑与 nmcli DNS 分隔全部对官方文档核完，结论集中在「手册核对结论」与「仍需上板实测」两节。**四条里三条由手册裁决**：裸 `hdmi` 键不存在（`hdmi=0` 弃用，禁用 HDMI 改用 `hdmi_ignore_hotplug=1`——这同时纠正了上一条把 `hdmi=0` 简单判给 `hdmi_force_hotplug=1` 的择一，两个需求方向相反）；`enable_tvout` 在 3B 上默认即为 `1`，源文档「3B 要显式开启且与 HDMI 互斥」的机型判断是反的，3B 的复合视频参数是 `sdtv_mode` 一族；`gpu_mem` 默认 `76` 成立但依据是「内存 ≥1 GB」而不是机型。**第四条（3B 是否默认启用 KMS）官方文档没有按机型陈述默认值，仍无法裁决**，维持 `[待验证]`。nmcli `ipv4.dns` 多值分隔裁决为空格加引号（nmcli-examples(7) 官方示例），逗号写法已从命令中删除——逗号在官方属性表里只对 `ipv4.addresses` 有依据；「地址固定」小节的回读断言保留，因为这条仍是文档结论、不是板上结果。本轮**未新增任何实测**，`[待验证]` 一条未升格。
 - 2026-10-15（编排会话收尾）：补 `hdmi_drive=2`、`systemctl list-units --type=target --state=active` 两条来自 `rpi-display-headless.md` 的条目；新增「网页终端 ttyd（Pi 侧）」节（安装、`ttyd -p 7681 -W bash`、systemd 常驻），关掉 `rpi-ssh.md` 把安装推给本文却无处可查的裂缝；VNC 一节的客户端指向改为 RealVNC Viewer。**两个来源文件（`rpi-headless-access.md`、`rpi-display-headless.md`）内容归并完毕后删除。**本条未新增任何实测：源稿里 `vcgencmd get_gpu_mem` 与 `hdmi=0` 两条按键名正确性判给主干现写法（`get_mem gpu`、`hdmi_force_hotplug=1`），属文档内部择一，不是实测结论。
 
 - 2026-10-15（A1 合稿）：本文升为 Pi 侧主干，吸收 `rpi-display-headless.md` 全文与 `rpi-headless-access.md` 的 Pi 侧段落，新增「镜像与默认账户基线」「boot 分区配置文件」「显示输出与无头模式」「串口控制台」「与其他文档的分工」五节，排障顺序补第 0 步（先用串口分辨系统是否在跑）。电脑侧段落（PuTTY/scp/`~/.ssh/config`）按端分界移交 `rpi-ssh.md`，本文原有的同名快照小节已删——`rpi-ssh.md` 有带 `[事实]` 的等价内容。
@@ -414,5 +440,5 @@ Pi 侧三个必查点：
 - 2026-10-15：新增「上行链路选项」节，区分控制链路与上网链路两个维度。
 - 2026-10-15 纠错：初版把 wlan0 写成与 eth0 共用 USB 2.0 总线，实际 3B 无线走 SDIO、只有 smsc95xx 以太网在 USB 上。涉及总线归属的推断已全部复核。
 - 2026-10-15：成文，**全部未实机验证**。未知项清单：SD 卡镜像代际与默认账户/SSH 基线（决定「连进去」的一切前提）、无头预置与静态写法随代际分叉、显示侧 4 个键名/默认值、PureVPN 后台能否导出配置文件与专用密码机制。
-- 下一步顺序：跑「镜像与默认账户基线」的四条探测命令落实代际与账户 → 按结果择一改写该节 → 配 WiFi 主通道那四项（国家码、随机 MAC、省电、蓝牙共天线）→ 用「排障顺序」0–5 逐条跑通 → 后台拿 VPN 配置（`.conf` 优先，其次 `.ovpn`）→ 装 wireguard-tools 或 openvpn 并连上 → 验证三连。link-local、静态直连与路线 A/B（借电脑代理、自跑 TUN 内核）留作备选，不排在关键路径上。
+- 下一步顺序：跑「镜像与默认账户基线」的四条探测命令落实代际与账户 → 按结果择一改写该节 → 落实「仍需上板实测」表里的图形驱动路径一条（决定 `hdmi_*` 旧键在这台 3B 上生效与否）→ 配 WiFi 主通道那四项（国家码、随机 MAC、省电、蓝牙共天线）→ 用「排障顺序」0–5 逐条跑通 → 后台拿 VPN 配置（`.conf` 优先，其次 `.ovpn`）→ 装 wireguard-tools 或 openvpn 并连上 → 验证三连。link-local、静态直连与路线 A/B（借电脑代理、自跑 TUN 内核）留作备选，不排在关键路径上。
 - 本窗口是 linked worktree，只迭代 `docs/pi/rpi-network.md` 与本窗口 context；`.ai/current.md` 与 `.ai/timeline.md` 归编排会话写。
