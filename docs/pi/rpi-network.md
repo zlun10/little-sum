@@ -49,7 +49,8 @@ ls /boot/firmware/ 2>/dev/null || ls /boot/   # 有无 ssh / userconf.txt 预置
 ## 接口盘点
 
 - 板载以太网 `eth0`（3B 为 100M，经 USB 2.0 挂在 smsc95xx 上）。`[事实]`
-- 板载 WiFi `wlan0` 与蓝牙同在 BCM43430，经 **SDIO** 接入，不占 USB 带宽；仅 2.4G（802.11n），无 5G。`[事实]`
+- 板载 WiFi `wlan0` 与蓝牙同在一片 combo 芯片，经 **SDIO** 接入，不占 USB 带宽；仅 2.4G（802.11n），无 5G。芯片型号有两种写法且都属官方：**产品页与 2016 发布稿写 BCM43438**（原文「BCM43438 wireless LAN and Bluetooth Low Energy (BLE) on board」），**Linux 驱动与固件文件名用 43430 一族**（Debian `firmware-brcm80211` 明确列有「BCM43430 NVRAM for the Raspberry Pi 3 B」，路径 `brcmfmac43430-sdio.raspberrypi,3-model-b.txt`）——写脚本匹配驱动时认 43430，谈硬件规格时认 43438，不是冲突。`[事实]`
+- 蓝牙为 4.1 **且带 BLE**：官方 3B 产品页与官方《Raspberry Pi product series explained》两处都明写 3B 有 Bluetooth Low Energy。3B+ 发布稿把「加入 BLE」当成相对 3B 的升级，是那句文案不严谨（3B+ 的实际变化是 4.2 与双频），不构成反证。`[事实]` 板上复核：`btmgmt -i hci0 info`。
 - 带宽归属：eth0 与 4 个 USB-A 口共享那条 USB 2.0 的 480M，插大容量 U 盘会拖慢**走有线**的 SSH；wlan0 走 SDIO，不受这条总线影响，主通道选 WiFi 后这类干扰基本不存在。`[事实]`
 - USB-C 口仅供电，无 OTG gadget，接电脑数据线不会出现 `usb0` 网卡。`[事实]`
 - 4 个 USB-A 口经内部 hub 引出，可接 USB 网卡或手机做 tethering（见上行链路第 4 项）。`[事实]`
@@ -115,7 +116,7 @@ sudo cp /boot/firmware/cmdline.txt /boot/firmware/cmdline.txt.bak
 - `[待验证]` 关掉随机 MAC，否则路由器侧的 MAC 地址绑定永远不生效、地址看起来随机变化：
   `sudo nmcli con mod "<SSID>" wifi.cloned-mac-address permanent`，以及 `wifi.scan-rand-mac-address no`。
   先查当前值：`nmcli -f 802-11-wireless.cloned-mac-address,802-11-wireless.scan-rand-mac-address con show "<SSID>"`。
-- `[待验证]` 3B 的 WiFi 与蓝牙共用 BCM43430 和同一条天线，经典蓝牙（尤其音频/串口透传）会通过 TDM 仲裁严重压制 2.4G 吞吐。不用蓝牙就彻底关掉：`/boot/firmware/config.txt` 加 `dtoverlay=disable-bt` 后重启，比只 stop 服务干净。注意这条与串口使能相互牵连——关掉蓝牙会腾出 PL011，见「串口控制台」的使能段，叠加后的行为未实测。
+- `[待验证]` 3B 的 WiFi 与蓝牙共用那片 combo 芯片（规格名 BCM43438，驱动名 43430）和同一条天线，经典蓝牙（尤其音频/串口透传）会通过 TDM 仲裁严重压制 2.4G 吞吐。不用蓝牙就彻底关掉：`/boot/firmware/config.txt` 加 `dtoverlay=disable-bt` 后重启，比只 stop 服务干净。注意这条与串口使能相互牵连——关掉蓝牙会腾出 PL011，见「串口控制台」的使能段，叠加后的行为未实测。
 
 ### 地址固定（让电脑有个不变的目标）
 
@@ -137,7 +138,7 @@ sudo cp /boot/firmware/cmdline.txt /boot/firmware/cmdline.txt.bak
 ### 排障（WiFi 专有，接在「排障顺序」的链路层之前）
 
 - `rfkill list all` → 若有 `Soft blocked: yes` 则 `rfkill unblock wifi`。
-- `sudo systemctl status NetworkManager wpa_supplicant` 与 `journalctl -u wpa_supplicant --no-pager | tail -30`；关联是否成功看 `wpa_cli status` 的 `wpa_state`，只有 `COMPLETED` 算过，停在 `SCANNING` 是找不到网络（信道/国家码），停在 `AUTHENTICATING` 或 `4WAY_HANDSHAKE` 多为密码错或加密不匹配（`[待验证]` 路由器设为仅 WPA3-SAE 时，3B 这代 BCM43430 未必能关联，先在路由器上放开 WPA2/WPA3 混合模式再试）。
+- `sudo systemctl status NetworkManager wpa_supplicant` 与 `journalctl -u wpa_supplicant --no-pager | tail -30`；关联是否成功看 `wpa_cli status` 的 `wpa_state`，只有 `COMPLETED` 算过，停在 `SCANNING` 是找不到网络（信道/国家码），停在 `AUTHENTICATING` 或 `4WAY_HANDSHAKE` 多为密码错或加密不匹配（`[待验证]` 路由器设为仅 WPA3-SAE 时，3B 这代 43430/43438 芯片未必能关联，先在路由器上放开 WPA2/WPA3 混合模式再试）。
 - `dmesg | grep -i brcmfmac` → 驱动枚举失败通常是供电不足或 SDIO 问题，与配置无关。
 - 分频段确认：3B 无 5G，路由器若开了「双频合一」且 Pi 被挤到弱信号侧，可在路由器上把 2.4G 单独命名以便强制连接。
 
@@ -443,10 +444,11 @@ Pi 侧三个必查点：
 - `rpi-gpio-pinout.md` —— 40 针完整引脚表与电气参数；本文只列串口那三根线。
 - `rpi-3b-hardware.md` —— SoC 规格、功耗、型号选型与上手清单。
 - `rpi-headless-access.md`、`rpi-display-headless.md` —— A1 合稿的来源，内容已全部并入本文与 `rpi-ssh.md`，两文件已由编排会话删除。文内若再出现同名提法，属历史记录。
-- 待编排会话跨稿同步（V5）：`rpi-ssh.md` 认领在 qoder-b 名下，本窗口未触碰。该文件的示例若仍把用户名写成 `pi`（`ssh pi@…`、`User` 之类），按本文「镜像与默认账户基线」的裁决改为 `<用户>` 占位——当前镜像不预置 `pi`。`Host pi` 这种别名不算，那是主机别名不是账户名。
+- ~~待编排会话跨稿同步（V5）：`rpi-ssh.md` 的示例用户名~~ **已完成（2026-10-15，编排会话）**：`rpi-ssh.md` 的 config 由 `User <pi-user>` 改为 `User <用户>`，第一节与第十一节涉及默认账户的两处「待 V5」标注按本裁决落地，`Host pi` 按约定保留为别名。本板镜像落在裁决哪一边仍 `[待验证]`。
 
 ## 状态
 
+- 2026-10-15（编排会话跨稿同步）：V3 由 `minimax-a` 判「无线芯片是本篇错」，同步时改判为**命名层次差异，两边都引到了官方原文**——产品页与 2016 发布稿写 BCM43438（`raspberrypi.com/products/raspberry-pi-3-model-b` 的 Specification 段；`raspberrypi.com/news/raspberry-pi-3-on-sale`），而 Debian `firmware-brcm80211` 为 3B 提供的是 `brcmfmac43430-sdio.raspberrypi,3-model-b.txt`，即驱动/固件侧归入 43430 一族。接口盘点据此改成双名并列并给出用名规则；排障两处与 WiFi 段同步。顺带把 V3 留作「无法裁决」的 **BLE 裁掉**：官方两处（3B 产品页、《Raspberry Pi product series explained》里 3B 那行「Bluetooth 4.1, Bluetooth Low Energy (BLE)」）都明写 3B 带 BLE，3B+ 发布稿的「加入 BLE」是文案不严谨，不属反证。另记一条：`raspberrypi.com` 的 3B 产品页**并未下架**，V3 报的 404 与本会话早前的 403 一样是抓取被拦，搜索引擎索引里该页规格段完整可读——所以本篇的官方依据不只有旧站。仍是手册层结论，板上复核 `btmgmt -i hci0 info`、`dmesg | grep -i brcmfmac`，无 `[待验证]` 升格。
 - 2026-10-15（V5 手册核对，本窗口）：最后一条未裁决的分歧「新镜像默认账户与 SSH 是否预置」由官方文档裁完，两说不再并存——**当前镜像不预置 `pi`、默认禁用 SSH**（`remote-access/ssh.adoc` 原文「By default, Raspberry Pi OS disables the SSH server.」，账户由 `getting-started/install.adoc` 的 Imager *User* 子标签或 `configuring.adoc` 的首启向导创建）；`pi`/`raspberry` 直连只适用于早期镜像。官方文档自身的滞后解释了说法一为何流传：issue #2537（2022-05-11）首句已写「Now the default user has been removed…」，示例里的 `pi`/`raspberry` 却到 PR #3310（分支 `default-user-retcon`，2023-12-08 合并）才清干净。无头启用 SSH 的官方预置法是 boot 分区**同时**放空 `ssh` 与 `userconf.txt`（`setting-up.adoc` 的「Manual setup for SSH」，哈希用 `openssl passwd -6`），只放 `ssh` 不足以登录。据此本文全部示例用户名改为 `<用户>` 占位（含 ttyd unit 的 `User=`），基线节的探测命令把 `id pi` 换成 `ls /home`；`bootfs` 里 `wpa_supplicant.conf` 自 Bookworm 起失效原为推断，现补上官方原文。**仍未裁决**：移除动作对应哪一次镜像发布，官方不按发布日期陈述，本机装的又是哪一张，维持 `[待验证]` 并把四条板上判据写进「仍需上板实测」。本轮**未新增任何实测**，无 `[待验证]` 升格；`rpi-ssh.md` 的同名示例未改（认领在 qoder-b），只在「与其他文档的分工」留了同步提示。
 - 2026-10-15（V1 手册核对，本窗口）：显示侧 4 条存疑与 nmcli DNS 分隔全部对官方文档核完，结论集中在「手册核对结论」与「仍需上板实测」两节。**四条里三条由手册裁决**：裸 `hdmi` 键不存在（`hdmi=0` 弃用，禁用 HDMI 改用 `hdmi_ignore_hotplug=1`——这同时纠正了上一条把 `hdmi=0` 简单判给 `hdmi_force_hotplug=1` 的择一，两个需求方向相反）；`enable_tvout` 在 3B 上默认即为 `1`，源文档「3B 要显式开启且与 HDMI 互斥」的机型判断是反的，3B 的复合视频参数是 `sdtv_mode` 一族；`gpu_mem` 默认 `76` 成立但依据是「内存 ≥1 GB」而不是机型。**第四条（3B 是否默认启用 KMS）官方文档没有按机型陈述默认值，仍无法裁决**，维持 `[待验证]`。nmcli `ipv4.dns` 多值分隔裁决为空格加引号（nmcli-examples(7) 官方示例），逗号写法已从命令中删除——逗号在官方属性表里只对 `ipv4.addresses` 有依据；「地址固定」小节的回读断言保留，因为这条仍是文档结论、不是板上结果。本轮**未新增任何实测**，`[待验证]` 一条未升格。
 - 2026-10-15（编排会话收尾）：补 `hdmi_drive=2`、`systemctl list-units --type=target --state=active` 两条来自 `rpi-display-headless.md` 的条目；新增「网页终端 ttyd（Pi 侧）」节（安装、`ttyd -p 7681 -W bash`、systemd 常驻），关掉 `rpi-ssh.md` 把安装推给本文却无处可查的裂缝；VNC 一节的客户端指向改为 RealVNC Viewer。**两个来源文件（`rpi-headless-access.md`、`rpi-display-headless.md`）内容归并完毕后删除。**本条未新增任何实测：源稿里 `vcgencmd get_gpu_mem` 与 `hdmi=0` 两条按键名正确性判给主干现写法（`get_mem gpu`、`hdmi_force_hotplug=1`），属文档内部择一，不是实测结论。
