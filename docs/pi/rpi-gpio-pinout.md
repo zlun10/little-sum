@@ -1,6 +1,6 @@
 # 树莓派 3B — GPIO 主干（引脚、电气与控制路径）
 
-本文是 GPIO 类的唯一主干：40 针排针的构成、电气限制、完整引脚表、树莓派 3B 特有的坑，以及控制它的所有路径（Python 分层、命令行、C、通过 SWD 操作外部 CW32）。原 `rpi-gpio-control.md` 已整体并入第七节起的内容，文件名不再保留。
+本文是 GPIO 类的唯一主干：40 针排针的构成、电气限制、完整引脚表、树莓派 3B 特有的坑，以及控制它的所有路径（Python 分层、命令行、C）。原 `rpi-gpio-control.md` 已整体并入第七节起的内容，文件名不再保留。
 
 适用机型：Raspberry Pi 3 Model B（BCM2837，40 针排针 J8）
 
@@ -205,7 +205,6 @@ Pi 3 和 4 把原本的**硬件 UART**（`/dev/ttyAMA0`，PL011）改给了板�
 | 遗留 | `RPi.GPIO` | 老镜像默认库，0.7.x 后基本停维护，只在旧代码里遇到 |
 | 不写代码 | `pinctrl` / `libgpiod` 命令行 | 试引脚、查复用、一次性点亮 |
 | C | `libgpiod` 或 mmap 寄存器 | 只换更小抖动，不换实时性，见第十节 |
-| 外部 MCU | SWD + OpenOCD/GDB | CW32 的 GPIO 不在上面任何一条里，见第十二节 |
 
 **`gpiozero` 与 `lgpio` 是分层关系，不是竞品**：前者是后者的上层，新代码按「高层优先，需要底层能力再降一层」选，不存在二选一的裁决。
 
@@ -552,11 +551,10 @@ close(fd);
 | CPU 占用 | 解释器常驻,较高 | 接近 0 | 接近 0 |
 | 最小可靠周期(带 sleep) | 约 1 ms | 约 100 µs | 约 50 µs |
 
-默认树莓派内核是**普通抢占式非实时**的,再快的 C 程序也只是"更频繁地被调度"。真需要微秒级确定性,只有三条路:
+默认树莓派内核是**普通抢占式非实时**的,再快的 C 程序也只是"更频繁地被调度"。真需要微秒级确定性,只有两条路:
 
 1. 换 `PREEMPT_RT` 内核 —— 树莓派有官方 Real-Time 预览镜像,但稳定性要自己评估。
 2. 写内核模块或用 `PREEMPT` 实时线程 —— 复杂度陡增。
-3. **把实时逻辑挪到 CW32**,树莓派只做上位机 —— 本项目的既有结论。
 
 **判断标准:如果你现在用 Python 的延迟已经够用,换成 C 就是白写。** 先量再优化。
 
@@ -583,131 +581,7 @@ close(fd);
 
 ---
 
-## 十二、两类 GPIO 先分清：Pi 本机与 CW32
-
-| | A. Pi 本机 GPIO | B. CW32 的 GPIO |
-| --- | --- | --- |
-| 归属 | 树莓派 BCM2837 自己 | 外部 MCU 外设 |
-| 通道 | 40 针排针 + I²C/SPI/UART | SWD 调试器 |
-| 前提 | 无 | **必须有 CMSIS-DAP 探针** |
-| 实时性 | 毫秒级,受 Linux 调度影响 | MCU 自主运行,微秒/定时器级 |
-| 典型用途 | LED、按钮、蜂鸣器、传感器 | 调试寄存器、烧录、引脚验证 |
-
-B 的现实约束:Raspberry Pi 3B **不能充当 USB-CMSIS-DAP 探针**,探针芯片必须是独立硬件(推荐 RP2040 / Pico 刷 picoprobe 固件)。是否购置见 `.ai/current.md`,目前未确认。
-
-
----
-
-## 十三、通过 SWD 控制 CW32 的 GPIO
-
-> 硬件前提:树莓派 3B 上位机 → USB → **CMSIS-DAP 探针**(Pico/RP2040)→ SWDIO / SWCLK / GND / nRESET → CW32。
-> 探针尚未确认是否购置,见 `.ai/current.md`。缺探针时本节全部不成立。
-
-### 工具链
-
-```bash
-sudo apt install openocd gcc-arm-none-eabi
-arm-none-eabi-gdb --version
-```
-
-### 端口约定(已定,勿随意改)
-
-| 端口 | 用途 |
-| --- | --- |
-| **3333** | OpenOCD GDB server |
-| **4444** | OpenOCD telnet 控制台 |
-
-两个端口由同一个 OpenOCD 进程提供,**同一时刻只允许一个 agent 窗口占用**,否则会拿到别人的板子产生假结论。切换使用者前先确认上一方已关闭 OpenOCD。
-
-### OpenOCD 配置
-
-新建 `openocd-cw32.cfg`,内容按实际 CW32 型号调整:
-
-```tcl
-adapter driver cmsis-dap
-transport select hla_swd
-hla_layout cmsis-dap
-hla_device_desc "CMSIS-DAP"
-
-set CHIPNAME cwmcu
-# Cortex-M0+ SCSID;若是 Cortex-M0(非 +)需改用 0x0BA0145x
-set _CPUTAPID 0x0ba01477
-
-swj_newdap $_CHIPNAME cpu -irlen 4 -expected-id $_CPUTAPID
-dap create $_CHIPNAME.dap -chain-position $_CHIPNAME.cpu
-
-set _WORKAREASIZE 0x4000
-set _FLASHNAME $_CHIPNAME.flash
-
-# 官方配置不含 CW32 的 flash 算法,需要按型号补充
-flash bank $_FLASHNAME.cortex_m \
-    cortex_m_work_area_origin $_WORKAREASIZE 0 0 \
-    $_FLASHNAME cpu target
-
-gdb_port 3333
-telnet_port 4444
-```
-
-启动:
-
-```bash
-openocd -f interface/cmsis-dap.cfg -f openocd-cw32.cfg
-```
-
-> **`swj_newdap` 已废弃。** 它在 OpenOCD 0.11 起会打印弃用警告,在 0.12 中已移除;树莓派镜像目前仍带 0.10/0.11,所以暂时能跑。遇到 `unknown command` 或未来升级后启动失败,把 `swj_newdap` 那一行换成纯 SWD 的新写法:
->
-> ```tcl
-> swd newdap $_CHIPNAME cpu -expected-id $_CPUTAPID
-> ```
-
-### GDB 会话
-
-```bash
-arm-none-eabi-gdb build/firmware.elf
-```
-
-```
-(gdb) target extended-remote localhost:3333
-(gdb) monitor reset halt
-(gdb) load
-(gdb) continue          # 断开后固件自主运行
-```
-
-### 临时改 GPIO 寄存器
-
-**通过 ELF 符号访问,不要写裸地址**——裸地址在不同 CW32 型号之间完全不同,写错会静默改到别的外设。
-
-GDB 的 `set` **不支持 `|=` / `+=` 这类复合赋值**,必须写成"读—改—写"的完整表达式。直接 `= (1 << n)` 还会把同一寄存器里其它引脚的配置一起清零:
-
-```
-(gdb) print/x RCC_AHB2ENR
-$1 = 0x10404083
-
-# 读-改-写,只动目标位
-(gdb) set {unsigned int}&RCC_AHB2ENR = RCC_AHB2ENR | (1 << 2)      # 开 GPIOA 时钟
-(gdb) set {unsigned int}&GPIOA_MODER   = GPIOA_MODER   | (1 << 34)  # GPIO17 设为输出
-(gdb) set {unsigned int}&GPIOA_ODR     = GPIOA_ODR     | (1 << 17)  # 输出高
-
-(gdb) print/x GPIOA_IDR
-$2 = 0x0000
-```
-
-改完回读确认一次,比不看结果继续改安全。
-
-停掉调试器芯片状态就丢,所以:
-
-- **只在验证引脚物理连通性、做一次性确认时用这套。**
-- 正式功能一律写进固件,由 MCU 自己跑。寄存器状态**不会**跨越 `monitor reset`,也更不会跨越断电。
-
-### 选型建议
-
-需要定时/中断/PWM 精度时,别在树莓派上做。Linux 侧调度抖动是毫秒级,CW32 用硬件定时器是微秒级——串口日志 + 寄存器 dump 已经足够定位,不值得为此引入树莓派实时的复杂度。
-
----
-
-## 十四、常见坑清单
-
-1–9 属 Pi 本机（第七到十一节），10–12 属 CW32 与 SWD（第十二、十三节）。
+## 十二、常见坑清单
 
 1. **物理针号当成 GPIO 号**——最常见,现象是"点 A 亮 B"。
 2. **新镜像没有 `RPi.GPIO`**,或老镜像没有 `lgpio`,先 `import` 试一次。
@@ -718,9 +592,6 @@ $2 = 0x0000
 7. **用 `/dev/mem` 而非 `/dev/gpiomem`**——要么被 `CONFIG_STRICT_DEVMEM` 拒绝,要么摸到不该摸的寄存器。
 8. **mmap 写法在 Pi 4 / Pi 5 上照抄**——BCM2711 / BCM2712 的 GPIO 基址完全不同,会往错误地址写。
 9. **忘了 C 也要 root**——`/dev/gpiomem` 和 `/dev/gpiochip*` 都在 `gpio` 组,非 root 直接 open 失败。
-10. **OpenOCD 被两个窗口同时跑**——抢端口,以及测到别人的板子。
-11. **CW32 flash 算法缺失导致 `program` 失败**——这是配置问题不是硬件问题,先看 OpenOCD 日志。
-12. **改了寄存器就以为持久生效**——没有。
 
 ## 参考
 
@@ -730,8 +601,6 @@ $2 = 0x0000
   - `documentation/asciidoc/computers/raspberry-pi/gpio-pad-controls.adoc` —— 驱动强度档位、16mA 安全值、3.3V 供电每脚约 3mA 的警告
 - `lgpio` 库:github.com/gpiozero/lgpio
 - `libgpiod` C 库:kernel.org/doc/html/latest/gpio/libgpiod.html
-- OpenOCD 手册:openocd.org/documentation/
-- CW32 系列寄存器定义以对应型号的 Reference Manual 为准
 
 ## 相关文档
 

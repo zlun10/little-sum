@@ -1,5 +1,13 @@
 # 任务时间线
 
+## 2026-10-15 — 项目目标与 CW32 脱钩；GPIO 篇删除 SWD 两节；发现窗口侧状态陈述与仓库不符
+
+- 决策：**本仓库与 CW32 无关，那条关联舍弃**（用户原话「和它没关系，舍弃」，在三个读法里选定「舍弃 CW32 这条关联」）。此前 `README.md` 从未把 CW32 写进目标（目标只有「树莓派 3B + 廉价 agent」两句），`current.md` 也只把它列为「未确认的痛点」——它是从我的历史记忆（用户主业是 CW32 固件工程师）带进来的前提，被当成了项目目标。**把旧记录推定的目标当作用户的目标，是本轮偏题的根因**。项目目标即 `README.md` 那两句：一台树莓派 3B + 全程廉价/免费 agent。
+- 落地删除：`docs/pi/rpi-gpio-pinout.md` 原第十二节（Pi 本机 GPIO vs CW32 GPIO）、第十三节（通过 SWD 控制 CW32：OpenOCD 配置、3333/4444 端口独占、GDB 读改写寄存器、选型建议）整段移除；第七节控制路径表删「外部 MCU」行；第十节「真需要微秒级确定性只有三条路」删第 3 条（把实时逻辑挪到 CW32）改为两条；末节由「十四、常见坑清单」升为「十二、常见坑清单」，坑由 12 条收敛为 9 条（删 OpenOCD 抢端口、CW32 flash 算法、寄存器持久生效三条）；参考段删 OpenOCD 手册与 CW32 Reference Manual 两条。`rpi-3b-hardware.md` 第 4 节的指向语、`README.md` 索引行同步去词。核 `grep CW32|SWD|OpenOCD|CMSIS-DAP|探针 docs/ README.md` 已零命中。
+- 连带裁定（用户）：`AGENTS.md`「硬件与固定端口」那条**不改**，等板子真正在场再定；`main` **不再推送** GitHub；`docs/` 现存四篇全部保留，显示侧（HDMI/VNC/ttyd）不删。
+- 决策：下一轮只派一份 W7（`.ai/dispatch/qoder-b.md` → `rpi-ssh.md`）：用户批准在本机装 SSH 服务端，用它销掉两条其实不依赖树莓派的 `[待对端实测]`（`accept-new` 的落盘行为、远端 `exit 255` 是否与连接失败同码）。结果只算本机服务端，仍不得升格为对 Pi 的实测。
+- 现场（重要）：窗口侧传来的状态陈述与仓库实况全不符——声称 `main` 已 `3885921`、四分支各带提交与认领行、`.ai/dispatch/` 四份在架、`minimax-a` 写了 `rpi-gpio-robust.md`。实测：五处 worktree 全在 `a52b7f2`；那批 commit 在共享对象库里 `Not a valid object name`；`grep 正在改 .ai/contexts/` 零命中；`.ai/dispatch` 不存在。**判据固定为 `git worktree list` + `git cat-file -t <commit>` + 认领行 grep，三者任一核不上就不据此动手**（同机共享对象库，真提交必然可见）。原计划的「先合 worker 改动、再按现存章节号改引用」因此无对象可合，编号由 `main` 单方面改完。
+
 ## 2026-10-15 — 信箱派单端到端跑通；V3–V6 回收，两处裁决被跨稿改判
 
 - 结论：**仓库信箱机制成立**。四个窗口（含无编程消息通道的 `minimax-a`、`minimax-b`）都执行了 dispatch 的「开工第一步（`git merge main` → 写认领行 → 跑校验）」与「收尾（结论进 context、删认领行、`git rm` 派单文件）」；四份派单全部被 `git rm`，`.ai/dispatch/` 目录随之消失，校验报 `INFO 无 .ai/dispatch 目录`。回收范围判断准确：无多做、无漏做，四窗口都只动自己认领的那一篇，未越界改他人文件或 `current.md`/`timeline.md`。用户口头触发的方式（一句「开工」）足以让 MiniMax 侧完整接手任务书。

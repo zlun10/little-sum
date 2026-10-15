@@ -55,7 +55,7 @@
 
 ## 3. GPIO 与引脚表：本文不再维护
 
-40 针的完整对照、3V3/5V/GND 分布、逻辑电平与供电限制、总线速查、三套编号与硬件 PWM 引脚，全部以 [`rpi-gpio-pinout.md`](./rpi-gpio-pinout.md) 为准；控制方式（gpiozero / lgpio / pinctrl / libgpiod / C）与通过 SWD 控制 CW32 的 GPIO 在同一篇第七节之后。
+40 针的完整对照、3V3/5V/GND 分布、逻辑电平与供电限制、总线速查、三套编号与硬件 PWM 引脚，全部以 [`rpi-gpio-pinout.md`](./rpi-gpio-pinout.md) 为准；控制方式（gpiozero / lgpio / pinctrl / libgpiod / C）在同一篇第七节之后。
 
 本节原先自带一张引脚表和一段电气说明，与 GPIO 篇在**针 16、SPI0 MOSI、针 38、可用 GPIO 计数、硬件 PWM 引脚**五处对不上（例如把 GND 列成 9 个含针 38、把 GPIO10 当成针 18 的 SPI0 MOSI、把 3V3 放在针 16）。GPIO 篇的计数（28 引出、扣 ID_SD/ID_SC 后 26 可用、GND 8 个）与 40 针排针的定义自洽，判为正确侧，故整段删除。
 
