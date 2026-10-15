@@ -11,17 +11,18 @@
 - `[对端实测]` = Pi 在场实跑得到，须同时记日期与用的哪个客户端。当前**尚无一条**，回填时不要写成 `[本机实测]`——后者的定义就是「与 Pi 无关」，混用会把端别记错。
 - `[分歧未裁决]` = 本仓多篇文档互相矛盾且无权威依据，**只并列双方立场，不择一**（见第十一节）。
 
-全文**没有任何一条对 Pi 的实测**。逐项考法见 `.ai/contexts/qoder-b.md` 的「电脑侧实测清单」小节。
+全文**没有任何一条对 Pi 的实测**。V6 已把其中**不依赖板子**的项在本机跑掉并改标 `[本机实测]`（各条自带命令与实际输出），真需要板子的仍保留 `[待对端实测]`；逐项考法见 `.ai/contexts/qoder-b.md` 的「电脑侧实测清单」小节。
 
 ## 一、电脑侧现状（本机实测）
 
 | 项 | 结论 |
 |----|------|
-| SSH 客户端数量 | `[本机实测]` 两个：Git Bash `/usr/bin/ssh` = OpenSSH_9.9p1（PATH 首位），`C:\WINDOWS\System32\OpenSSH\ssh.exe` = OpenSSH_for_Windows_9.5p2。不写绝对路径时用哪个由当前终端的 PATH 决定，两种终端下不是同一个。 |
+| 执行环境 | `[本机实测]` 下列结论只在 Windows 10.0.26300.0 上得到，涉及三个 ssh 实现：msys `OpenSSH_9.9p1`、`System32` 的 `OpenSSH_for_Windows_9.5p2`、WSL Ubuntu-22.04 的 `OpenSSH_8.9p1`。换机器或换版本需重跑。 |
+| SSH 客户端数量 | `[本机实测]` 两个：Git Bash `/usr/bin/ssh` = OpenSSH_9.9p1，`C:\WINDOWS\System32\OpenSSH\ssh.exe` = OpenSSH_for_Windows_9.5p2。**PowerShell 里 PATH 首位也是前者**：`Get-Command ssh.exe -All` 的顺序是 `D:\Dev\Git\usr\bin\ssh.exe` 然后 `C:\WINDOWS\System32\OpenSSH\ssh.exe`，而 `cygpath -w /usr/bin/ssh` 正是 `D:\Dev\Git\usr\bin\ssh.exe`。所以「两种终端命中的是不同客户端」在本机**不成立**——同一个 9.9p1；只有显式写绝对路径、或 PATH 顺序变化时才会用到 9.5p2。差异风险仍然真实存在（两版本行为确有不同，见第六节 `-t`），但它不是默认状态。 |
 | 自带程度 | `[本机实测]` `System32\OpenSSH\` 目录内确有 `ssh.exe`、`scp.exe`、`sftp.exe`、`ssh-keygen.exe`、`ssh-keyscan.exe`——系统自带客户端已覆盖 SSH/SFTP 传输，不必额外安装。 |
-| 配置目录 | `[本机实测]` 两客户端 `userknownhostsfile` 分别为 `/c/Users/zheng/.ssh/known_hosts` 与 `C:\Users\zheng\.ssh\known_hosts`，同一物理文件。一套 Host 别名、一份密钥、一份 known_hosts 两侧通用，不维护两份。 |
+| 配置目录 | `[本机实测]` 两客户端 `userknownhostsfile` 分别为 `/c/Users/zheng/.ssh/known_hosts` 与 `C:\Users\zheng\.ssh\known_hosts`，同一物理文件。一套 Host 别名、一份密钥、一份 known_hosts 两侧通用，不维护两份。**但「两侧」只指这两个 Windows 客户端**：`[本机实测]` WSL 里 `HOME=/home/anwen`、`userknownhostsfile /home/anwen/.ssh/known_hosts`，且该目录已另有一把 `id_rsa`。在 WSL 内发起的 ssh 不继承 Windows 侧的别名、密钥与已认指纹，要单独建一份——这属于换机器，不是换终端。 |
 | 默认密钥轮询列表 | `[本机实测]` 两者不同：9.9p1 无 `id_dsa`，9.5p2 有。结论：不靠默认轮询，`IdentityFile` + `IdentitiesOnly yes` 显式锁定。 |
-| 无配置时的解析 | `[本机实测]` `ssh -G <任意名>` 显示 `user zheng`、`port 22`、`batchmode no`、`stricthostkeychecking ask`。两个后果：不写 `User` 就拿 Windows 用户名去登录（Pi 上通常没这用户，表现为认证失败）；`ask` + 非交互会卡在指纹确认——这就是「人工能连、agent 连不上」的根因。 |
+| 无配置时的解析 | `[本机实测]` `ssh -G <任意名>` 显示 `user zheng`、`port 22`、`batchmode no`、`stricthostkeychecking ask`。两个后果：不写 `User` 就拿 Windows 用户名去登录（表现为认证失败）；`ask` + 非交互会卡在指纹确认——这就是「人工能连、agent 连不上」的根因。Pi 侧默认账户是谁、`zheng` 是否恰好冲突，属 V5 裁决范围，**账户基线待 V5 结论**，本行不对此改判。 |
 | 连接失败的退出码 | `[本机实测]` 域名解析失败、127.0.0.1 端口无监听两种场景下，两客户端均返回 **255**。远端命令自身 `exit 255` 是否同样返回 255 属 `[待对端实测]`。 |
 | `~/.ssh/config` | `[本机实测]` 不存在，别名待建。 |
 | 密钥 | `[本机实测]` `~/.ssh/id_ed25519` 已存在且**无口令**（`ssh-keygen -y -P ''` 直接成功），不需要新生成。 |
@@ -65,13 +66,32 @@ Host pi
 
 **本文能定的**：`HostName` 的取值只写这一处，命令行永远只出现 `ssh pi`。地址写法将来若再变更，也只改这一行，其余章节不动。
 
+`[本机实测]` 这个隔离机制成立，测法是临时 config 里把 `Host pi` 的 `HostName 127.0.0.1` 写在前面、其后还有一个 `Host *` 块写着 `HostName 10.0.0.9` 与 `User wildcarduser`：
+
+```
+hostname 127.0.0.1          ← 特定块胜，即使 Host * 写在后面也覆盖不了它
+user wildcarduser           ← 特定块里没写的键，才由 Host * 补上
+```
+
+再验目标真被使用：命令行只写别名，不出现任何地址——
+
+```sh
+ssh -F <cfg> -o BatchMode=yes pi 'echo __DONE__'
+# ssh: connect to host 127.0.0.1 port 2202: Connection refused
+```
+
+目标完全来自 config。以上两客户端输出逐行一致。结论：`HostName` 一处生效的前提是**该键只出现在一个匹配块里**；若同时在 `Host *` 写了 `HostName`，谁在前谁赢，排查时先 `ssh -G pi` 看实际落到哪个值，不要读文件推断。
+
 **`HostName` 取 IP 还是 `raspberrypi.local`：按 Pi 侧稿的取舍写 IP**（`rpi-network.md`「镜像与默认账户基线」末段已把它定为取舍而非技术分歧：mDNS 只省得查 IP，不保证可用，且 VPN 会改 DNS 后缀、可能拦多播）。本文因此把写法隔离在 `HostName` 一处，命令行永远只出现 `ssh pi`。
 
 - 这不是实测结论：本机 mDNS 到底能不能解析 `.local` 仍未验（`[本机实测]` 只表明当前网络里没有 Pi，测不出结果）。
 - 保留的判据（Pi 在场时顺手跑，结果只影响人工临时排查是否可以用 `.local`，不改变自动化写 IP 的决定）：`Resolve-DnsName raspberrypi.local` 有返回 → 本机 mDNS 可用；再与 `arp -a`／路由器客户端列表里的 IP 对同一台设备做双向连通对比。
 - 写法换向时的连带影响（备忘，真要切换才看）：known_hosts 的条目键随之改变，`StrictHostKeyChecking` 与 `ssh-keygen -R` 操作的对象也不同；曾用 `pi@IP` 连过又改用 `.local`，旧条目不会自动失效。
 
-`StrictHostKeyChecking` 三档取舍：`ask` 交互最安全但 agent 必卡；`accept-new` 只自动接受**新**主机、已变化主机仍拒绝，是本场景合适档位；`no` 不用——它同时关掉中间人检查，并把地址漂移伪装成静默错误。`[待对端实测]` 两客户端是否都接受 `accept-new`（9.5 与 9.9 均晚于该选项引入版本，但未分别对真服务器跑过）。
+`StrictHostKeyChecking` 三档取舍：`ask` 交互最安全但 agent 必卡；`accept-new` 只自动接受**新**主机、已变化主机仍拒绝，是本场景合适档位；`no` 不用——它同时关掉中间人检查，并把地址漂移伪装成静默错误。
+
+- 解析层 `[本机实测]`（三个实现都过）：把 `StrictHostKeyChecking accept-new` 写进临时 config 跑 `ssh -F <cfg> -G pi`，9.9p1 / 9.5p2 / WSL 8.9p1 均输出 `stricthostkeychecking accept-new`，无 `Bad configuration option`。**这个测法有效是因为做了控制实验**：同法写 `StrictHostKeyChecking bogus` 时三者都报 `unsupported option "bogus"` 并 `rc=255`，说明 `-G` 会校验选项的**取值**而不只是关键字名。
+- 行为层仍 `[待对端实测]`：「陌生主机自动接受并落盘」与「已变化主机必须拒绝」都要一次真实的密钥交换才能观察，与树莓派无关，但本机没有可用的 SSH 服务端（`sshd` 服务不存在、`127.0.0.1:22` 无监听、WSL 内未装 `openssh-server`）。派单建议的「拿一个不可解析的宿主名来观察首次提示与落盘」**测不出东西**：`[本机实测]` `ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes nosuchhost.invalid 'echo __DONE__'` 止步于 `Could not resolve hostname`，指定的 `UserKnownHostsFile` 连文件都没被创建（未发生 KEX），主 `known_hosts` 大小与 mtime 未变。要在本机销这条账，需要装一个本机 SSH 服务端（属环境改动，待用户批准），否则只能等板子。
 
 写完立即复核，两客户端各跑一次（`[本机实测]` `-G` 两侧都支持）：
 
@@ -131,7 +151,8 @@ ssh -o PasswordAuthentication=no pi 'echo ok'
 
 形态：`ssh pi '<cmd>'`，选项已由 config 承载。
 
-- 退出码：`[本机实测]` 连接层失败（解析失败、端口无监听）两客户端均返回 255；`[待对端实测]` 远端命令自身 `exit 255` 是否同为 255。**仅凭退出码不可区分这两类**，判别用哨兵：`ssh pi 'cmd && echo __DONE__'`，看 stdout 有无 `__DONE__`，而不是只看码。
+- 退出码：`[本机实测]` 域名解析失败与端口无监听两种场景下，两客户端均返回 255 且 **stdout 为空**——这证的是哨兵的「缺失侧」：连接层失败时 `__DONE__` 一定不会出现，所以「看 stdout 有没有哨兵」在本地就成立。`[待对端实测]` 远端命令自身 `exit 255` 是否也返回 255（需一次真 KEX，非 Pi 专属）。**仅凭退出码不可区分这两类**，判别仍用哨兵：`ssh pi 'cmd && echo __DONE__'`，看 stdout，而不是只看码。
+- 读退出码的坑 `[本机实测]`：不要把 ssh 直接管进 `sed`/`grep` 再读 `$?`，那拿到的是管道末端的码。本机实测过一次假 `rc=0`——`ssh ... | sed 's/^/  /'` 之后 `$?` 是 `sed` 的 0，同一命令不接管道重跑才是真实的 255。要同时留输出与退出码就分两步：`out=$(ssh ... 2>err.txt); rc=$?`。
 - 无 tty、非登录 shell：`ssh pi cmd` 的 PATH 与交互登录可能不同，会出现「人工能跑、远程报 command not found」。`[待对端实测]` 判据是三条对比，实测后回填本节：
 
   ```sh
@@ -141,7 +162,8 @@ ssh -o PasswordAuthentication=no pi 'echo ok'
   ```
 
   差异方向未知。处置优先级：命令写绝对路径 > 包一层 `bash -lc` > 不动 config。
-- `[待对端实测]` `-t` 会分配 pty，stdout 与 stderr 合并且换行变 `\r\n`。程序化解析输出的调用不要加 `-t`。
+- `[本机实测]` stdin 不是终端时（agent 的调用形态），两客户端在 `-t` 上的可观察行为不同：msys 9.9p1 打印 `Pseudo-terminal will not be allocated because stdin is not a terminal.` 然后继续尝试连接，加 `-tt` 则不打印；`System32` 9.5p2 在 `-t` 与 `-tt` 下**都没有**这一行。这只证「提示不同」；9.5p2 究竟是真分配了 pty 还是没有该检查路径，本机无服务端测不出来，不作断言。
+- `[待对端实测]` pty 下 stdout 与 stderr 合并、换行变 `\r\n`——要有对端才能验。程序化解析输出的调用不要加 `-t`。
 - 多行或带引号的逻辑不进命令行，走 stdin：`ssh pi 'bash -s' < task.sh`（注意 task.sh 的 CRLF，见第七节）。
 - 长任务放对端持久会话，断线不杀进程：`ssh pi 'tmux new -As task'` + `send-keys` + `capture-pane`。`[待对端实测]` 两点：对端是否装 tmux；`tmux new -As` 从无 tty 的 ssh 建立会话时 `-A` 的行为。这是本文风险最高的一条，实测时优先验证。
 
@@ -151,7 +173,7 @@ ssh -o PasswordAuthentication=no pi 'echo ok'
 |------|------|--------------|
 | git | 已提交代码的去程（对端 `clone`/`pull`） | `[本机实测]` `origin` 已配 |
 | rsync over ssh | 未提交现场、构建输入 | 对端需装 rsync `[待对端实测]`；单向镜像会掩盖差异 |
-| scp | 单文件/目录双向临时搬运 | `[本机实测]` 两客户端都带 `scp`，命令形态待对端实测 |
+| scp | 单文件/目录双向临时搬运 | `[本机实测]` 两客户端都带 `scp`，且都能解析 config 里的别名。判别实验：临时 config 里 `Host pi` 的 `HostName` 写 `nosuchhost.invalid`，msys 与 Windows 两版 `scp pi:/x .` 都报 `Could not resolve hostname nosuchhost.invalid`（目标取自 config）；去掉 `-F` 后两者同时改成报 `Could not resolve hostname pi`。另用 `HostName 127.0.0.1` `Port 2202` 时 msys 版给出 `ssh: connect to host 127.0.0.1 port 2202: Connection refused`，Windows 版不显示目标（`banner exchange: Connection to UNKNOWN port -1`），文本仍不可靠（第十节）。真实传输仍 `[待对端实测]` |
 | `ssh pi 'bash -s' <` | 一次性脚本，无需落盘 | `[待对端实测]` |
 | WinSCP | 图形拖拽、批量、可见差异 | `[本机实测]` **未安装** |
 
@@ -163,7 +185,7 @@ scp -r .\folder pi:/home/pi/                 # 目录
 
 用别名后不再需要在命令行重复 `<user>@<addr>`；旧稿写的是 `pi@raspberrypi.local`，已按第三节取舍改为写 IP，不照抄。
 
-- 换行符：`[待对端实测]` 电脑上写的 `.sh` 带 CRLF，Pi 端 bash 报 `\r: command not found` 一类错。防线：`.gitattributes` 写 `*.sh text eol=lf`；rsync/scp 传前 `sed -i 's/\r$//'`。
+- 换行符：`[待对端实测]` 电脑上写的 `.sh` 带 CRLF 时 Pi 端 bash 报什么错，仍未验。但**别指望在本机预演这个失败**：`[本机实测]` 同一个 `printf 'echo hi\r\n' > crlf.sh`（`od -c` 确认字节是 `e c h o   h i \r \n`）在本机 `bash crlf.sh` 下正常输出 `hi`，`sed -i 's/\r$//'` 后字节变为 `\n` 也输出 `hi`——本机 msys bash 对行尾 `\r` 是**容忍**的。所以「CRLF 必致错」不成立，这个坑只在特定 shell/特定行位置（如 `\r` 落在被当作命令名的整行、或变量拼接处）才显形，Pi 端到底属于哪种要实测。防线不变：`.gitattributes` 写 `*.sh text eol=lf`，传前 `sed -i 's/\r$//'`。
 - 产物回程：`ssh pi 'tar -C out -cf - .' > out.tar` 或反向 rsync。`[待对端实测]`
 - 并行窗口在 Pi 上的工作目录：一个窗口一个目录（与本仓 worktree 约定同粒度）。共用一个工作树时并行窗口互相覆盖改动，产生「看起来通过、实际测的是别人的改动」的假结论。布局未定。
 
@@ -214,29 +236,34 @@ Pi 侧运行 `ttyd -p 7681` 后，电脑或手机浏览器打开 `http://<pi 地
 | 远端报语法错、本地无错 | 数据面 | 查 CRLF |
 | 串口一片空白 / 乱码 | 多为对端 | 电脑侧只自查 COM 号、Flow control、驱动；其余转 Pi 侧稿 |
 
-`[待对端实测]` 上表文本按 OpenSSH 常见措辞整理，未在本机逐条构造复现（除退出码 255 与解析失败两行外）；实测时以实际输出为准，不符就改这张表而不是改解释。
+`[本机实测]` **这张表只能供人读，不能当脚本判据**——同一失败在两个客户端下的文本不同：解析失败时 msys 给 `Name or service not known`，Windows 给本地化中文且经管道后变成八进制转义 `\262\271\326\252\265\300...`（grep 不到）；端口无监听时 msys 给 `ssh: connect to host 127.0.0.1 port 2202: Connection refused`，Windows 给 `banner exchange: Connection to UNKNOWN port -1: Connection refused`，连目标端口都不显示。程序化判读一律走退出码 + 哨兵（第六节），文本只作人工排查的线索。
+
+`[待对端实测]` 上表其余行的文本按 OpenSSH 常见措辞整理，未在对端复现；实测以实际输出为准，不符就改这张表而不是改解释。
 
 ## 十一、分歧未裁决清单（与本文相关，禁止互抄）
 
 按 `.ai/current.md` 派单约束，以下只并列、不择一，裁决需实测或权威手册：
 
-1. **新镜像默认账户与 SSH 是否预置**：一说 `pi`/`raspberry` 首登并强制改密，一说需用 Imager 设用户名密码且默认不开 SSH。影响电脑侧**第一次连接时到底有没有密码可输**，即第五节递钥前是否需要先走对端使能。裁决前本文不写死任何凭据。探测命令在 `rpi-network.md`「镜像与默认账户基线」。
+1. **新镜像默认账户与 SSH 是否预置**：一说 `pi`/`raspberry` 首登并强制改密，一说需用 Imager 设用户名密码且默认不开 SSH。影响电脑侧**第一次连接时到底有没有密码可输**，即第五节递钥前是否需要先走对端使能。裁决前本文不写死任何凭据。探测命令在 `rpi-network.md`「镜像与默认账户基线」。**本条正由 `qoder-a` 在 V5 裁决**，本文凡涉及默认用户名处（第一节 `User` 那行、第五节递钥凭据）一律标注**账户基线待 V5 结论**，本轮未改判。
 2. **串口是否引入 PuTTY/plink 依赖**：`[本机实测]` 本机未安装；且串口是独占资源，与本仓多 agent 并行前提冲突。属用户串行安排范围，不在本文决定。
 
 已裁决、不再并列的两条：**主机名 `raspberrypi.local` vs 只用 IP** 是取舍而非待实测的技术分歧，Pi 侧稿与本稿一致采用「自动化与文档一律写 IP，`.local` 只作人工临时排查」，详见第三节；本机 mDNS 是否可解析仍未验，但不影响该取舍。**ttyd 是否留档** 随 Pi 侧稿补齐「网页终端 ttyd（Pi 侧）」而关闭：安装与常驻已有归口，第九节的消费侧内容不再悬空。
 
 ## 十二、状态
 
-- **首要未知项**：非交互 shell 的 PATH / tty 语义差异方向。它决定 agent 的调用要不要统一包 `bash -lc`，影响第六节全节。
-- 次要未知：`accept-new` 对真服务器的行为、tmux 无 tty 下 `-A` 的行为、两客户端在同一 config 下是否完全等值、本机 mDNS 能否解析 `.local`。
-- 工具缺口待决：PuTTY 或 `plink`（串口救援路径依赖，本机未装）、WinSCP（可选图形）。
+- **首要未知项**：非交互 shell 的 PATH / tty 语义差异方向。它决定 agent 的调用要不要统一包 `bash -lc`，影响第六节全节。V6 已把「`-t` 在两客户端下的提示差异」测出来了，但那是客户端侧，**不能外推成 Pi 侧 shell 的语义**。
+- V6 已在本机销账的项：`accept-new` 的**解析与取值校验**（三实现全过，含控制实验）、`HostName` 单点隔离的**匹配顺序机制**、连接层失败的**退出码 255 与哨兵缺失侧**、`-t` 无 tty 提示的**两客户端差异**、scp 的**别名解析**、PowerShell/Git Bash 的 **PATH 命中同一个 9.9p1**、WSL 是**独立家目录与独立 known_hosts**、失败文本**不可作脚本判据**、CRLF 在 msys bash 下**被容忍**。
+- 仍 `[待对端实测]`：认脸的**行为层**（陌生主机落盘、已变主机拒绝）、远端 `exit 255` 是否与连接失败同为 255、递钥与 `PasswordAuthentication=no` 判真、Pi 侧 PATH/tty 三条对比、tmux 无 tty 下 `-A`、scp 真实传输与 Pi 端 CRLF 报错文本、`-t` 下的 `\r\n` 合并流、mDNS 能否解析 `.local`。前两条其实**不需要树莓派**，只需要一个可完成密钥交换的 SSH 服务端——本机现在没有（`sshd` 服务不存在、22 无监听、WSL 未装 `openssh-server`），装它属环境改动，待批准。
+- 次要未知：两客户端在**行为层**是否等值（解析层已证逐行一致，`-t` 已证提示不同）；本机 mDNS 能否解析 `.local`。
+- 工具缺口待决：PuTTY 或 `plink`（串口救援路径依赖，本机未装）、WinSCP（可选图形）、本机 SSH 服务端（可让两条不等板子的项提前销账）。
 - 实测顺序：按 Pi 侧基线探测确定 `HostName` 的实际 IP → 建 config → `-G` 双端复核 → 端口探测 → 认脸（新键与已变键两段）→ 递钥 → `PasswordAuthentication=no` 判真 → 退出码与 PATH 判据 → tmux 会话 → scp 双向与 CRLF → 串口认口与参数。**逐项命令、预期输出、失败归属与「顺序为何不可换」见 `.ai/contexts/qoder-b.md` 的「电脑侧实测清单」**，它是本文全部 `[待对端实测]` 的执行入口；逐项结果回填本文并记为 `[对端实测]` 后，清单才在窗口记录里压缩。
 - 合稿来源：本稿 v3 吸收 `docs/pi/rpi-headless-access.md` 的电脑侧段落（PuTTY 终端参数、COM 号识别、scp/WinSCP 传文件、PowerShell 版公钥推送、SSH 排查表、ttyd 与手机客户端），并按端边界把接线/使能/镜像账户留给 Pi 侧稿。v4 由编排会话接手：补入该稿仍未落地的电脑侧条目，并把 ttyd / VNC 的对端一半补进 `rpi-network.md`，两个来源文件随后删除，文中残留的旧稿名只作出处标记。
 - 本文未覆盖：硬件形态、Pi 侧配置、业务形态。「多个 agent 远程执行」这一使用形态本身尚未确认，第六节与第七节的并发小节都以此为前提。
 
 ## 变更记录
 
-- 2026-10-15 v5（V2 实测清单任务）：不动章节结构，只修四处错位。① 证据等级新增 `[对端实测]` 档——原第十二节要求把 Pi 在场的结果回填成 `[本机实测]`，而后者定义明写「与 Pi 无关」，照原话回填会记错端别；② 第五节「是否设口令」由 `[待对端实测]` 归位为电脑侧自己的决定，并删掉对第一节 ssh-agent 那条「取舍」的失效引用（该行只写了 Disabled）；③ 第八节第 4 条 `screen` 摘掉 `[待对端实测]`——它与 Pi 是否在场无关，实测清单覆盖不到，留着就是死条目；④ 第十二节顺序改为指向窗口记录里的逐项清单。**未新增任何实测，`[待对端实测]` 一条未升格。**
+- 2026-10-15 v6（V6 本机销账）：环境记为 Windows 10.26300.0 + 三个 ssh 实现（msys 9.9p1 / System32 9.5p2 / WSL 8.9p1）。**两处推翻本稿旧假设**：① PowerShell 的 PATH 首位同样是 `D:\Dev\Git\usr\bin\ssh.exe`，「两种终端命中不同客户端」在本机不成立；② msys bash 容忍行尾 `\r`，「CRLF 必致 bash 报错」降级为对端待验的具体情形。新增本机实测并改标：`accept-new` 的解析与取值校验（附控制实验：`bogus` 值报 `unsupported option` 且 `rc=255`，证明 `-G` 校验取值）、`HostName` 单点隔离的匹配顺序（特定块胜 `Host *`，未写的键才由后者补）、连接层失败均为 `rc=255` 且 stdout 空（哨兵缺失侧）、`-t` 提示在两客户端下不同（msys 有、Windows 无）、scp 能解析 config 别名、失败文本不可作脚本判据（两客户端措辞不同且 Windows 侧中文在管道里变八进制转义）。新增读退出码的坑：`ssh | sed` 后 `$?` 是管道末端的，实测过假 `rc=0`。派单建议的「用不可解析宿主观察 `accept-new` 落盘」经实测**无效**（未发生 KEX，known_hosts 文件连创建都没有），已在第三节写明并给出真实前置（需一个可 KEX 的服务端，本机暂无，装它待批准）。V1 的 `hdmi=0` 判定在本文无引用点，未传导；涉及默认用户名处只加「账户基线待 V5 结论」，未改判。**没有新增任何对 Pi 的实测，`[待对端实测]` 未因本机结果而升格。**
+- 2026-10-15 v5（V2 实测清单任务）：不动章节结构，只修四处错位。① 证据等级新增 `[对端实测]` 档——原第十二节要求把 Pi 在场的结果回填成 `[本机实测]`，而后者定义明写「与 Pi 无关」，照原话回填会记错端别；② 第五节「是否设口令」由 `[待对端实测]` 归位为电脑侧自己的决定，并删掉对第一节 ssh-agent 那条「取舍」的失效引用（该行只写了 Disabled）；③ 第八节第 4 条 `screen` 摘掉 `[待对端实测]`——它与 Pi 是否在场无关，实测清单覆盖不到，留着就是死条目；④ 第十二节顺序改为指向逐项清单。**未新增任何实测，`[待对端实测]` 一条未升格。**
 - 2026-10-15 v4（编排会话合稿）：补入两源稿里两主干都没接住的条目——非 Windows 电脑的 `screen /dev/ttyUSB0 115200`（`Ctrl+A K` 退出）、FT232 驱动、短主机名 `ping raspberrypi`、「输密码没反应」排查行、无密钥时的 `ssh-keygen -t ed25519`、电脑侧 RealVNC Viewer 与 RealVNC Connect 兼容性告警；串口节由「三件事」改为四件事。分歧清单收敛：`raspberrypi.local` vs IP 由 `[分歧未裁决]` 改记为**已按取舍裁决（自动化一律写 IP）**，ttyd 一条因 Pi 侧稿新增「网页终端 ttyd（Pi 侧）」而关闭；第三节随之不再引用第十一节。`[待对端实测]` 与 `[本机实测]` 标记一条未升格。
 
 - 2026-10-15 v3（A2 合稿）：改标题与端边界声明，明确接线/`config.txt`/镜像账户归 Pi 侧稿；证据标记由 `[事实]/[待验证]` 细化为 `[本机实测]/[待对端实测]/[分歧未裁决]`；新增接入形态一览、串口终端（电脑侧三件事）、网页终端消费侧、分歧未裁决清单；失败归属表并入旧稿排查表并按端归属；传文件表补 scp（本机实测可用）与 WinSCP（本机未装）。本轮新增本机实测：系统自带 `scp/sftp/ssh-keyscan`、PuTTY 与 WinSCP 未安装、本机已有 COM3/COM19/COM22、Bonjour 未装、解析失败与端口无监听时两客户端均返回 255。**未把任何 `[待对端实测]` 升为实测。**

@@ -11,9 +11,11 @@
 
 ### 电脑侧实测清单（交给接板人照跑）
 
-对象：`docs/pi/rpi-ssh.md` 里全部 `[待对端实测]` 条目。**清单只列考法，不含任何实测结论**；跑完按「记录格式」逐项回填，才允许把该条从 `[待对端实测]` 改为 `[对端实测]`。
+**不依赖板子的项已于本机完成，见各条。** V6 把下面 P1/P3/P5/P8/P9 里其实只需要本机 SSH 客户端的部分先跑掉了，剩下真需要板子（或至少需要一个可完成密钥交换的服务端）的才留给接板人。
 
-需要的设备与前置：Pi 3B 已烧录、已联网、拿到实际 IP；一份能登录的凭据（账户基线未落实前，先跑 `rpi-network.md`「镜像与默认账户基线」的四条探测命令——P0 卡住则 P1 之后全部堵塞）；电脑侧两个客户端都在（`[本机实测]` 已确认）；P9 另需 USB-TTL 模块（拨到 3.3V 档）+ 杜邦线 + **用户批准安装 PuTTY 并独占该 COM 口**，未批准就整条跳过不跑。
+对象：`docs/pi/rpi-ssh.md` 里剩余 `[待对端实测]` 条目。跑完按「记录格式」逐项回填，才允许把该条改为 `[对端实测]`（不是 `[本机实测]`，后者定义是「与 Pi 无关」）。
+
+需要的设备与前置：Pi 3B 已烧录、已联网、拿到实际 IP；一份能登录的凭据（账户基线未落实前，先跑 `rpi-network.md`「镜像与默认账户基线」的四条探测命令——P0 卡住则 P1 之后全部堵塞；该基线正由 qoder-a 在 V5 裁决，本文不代判）；P3/P5 只要**任意一个可 KEX 的 SSH 服务端**即可，不必是板子（本机当前没有：`sshd` 服务不存在、22 无监听、WSL 未装 `openssh-server`，装它属环境改动、待批准）；P9 另需 USB-TTL 模块（拨到 3.3V 档）+ 杜邦线 + **用户批准安装 PuTTY 并独占该 COM 口**，未批准就整条跳过不跑。
 
 顺序不可换的三条硬依赖：
 
@@ -38,6 +40,8 @@ P<n> | 客户端 <msys|windows + 版本> | 结果 <通过|不符|未跑> | 实�
 
 预期：两输出逐行一致；`user` 是 Pi 的账户而非 `zheng`；`hostname` 是 P0 定下的 IP；`batchmode yes`、`stricthostkeychecking accept-new`。失败归属：任一 `Bad configuration option` → 定名层（该选项只被一个客户端认），按端回退；两输出不一致 → 别名解析依赖终端 PATH，属电脑侧定名层，不涉 Pi。
 
+> V6 本机已完成机制部分：`-G` 会校验选项**取值**（控制实验 `bogus` → `unsupported option "bogus"`、`rc=255`）、`accept-new` 在 9.9p1/9.5p2/WSL 8.9p1 全部解析通过、特定块胜 `Host *` 的顺序、别名目标确实来自 config（`ssh ... pi 'echo __DONE__'` 报 `connect to host 127.0.0.1 port 2202`）。待接板的只剩一件事：**换成真实的 `User`/`HostName` 重跑这两行**，确认 `user` 不是 `zheng`。
+
 **P2 不依赖认证的端口探测**（工具与客户端无关，两种终端各跑一次）
 
 ```sh
@@ -54,6 +58,8 @@ Test-NetConnection <ip> -Port 22      # 看 TcpTestSucceeded
 - 段一（新主机应自动接受并落盘）：先确保 `known_hosts` 无该键，再 `ssh -o BatchMode=yes pi 'echo ok'`。预期第一次就输出 `ok` 且**无任何交互提示**，随后 `ssh-keygen -F <ip>` 有命中。
 - 段二（已变化主机必须拒绝）：**先备份** `cp ~/.ssh/known_hosts ~/.ssh/known_hosts.bak`，把该键的 base64 中段改掉一个字符，再 `ssh -o BatchMode=yes pi 'echo ok'`。预期拒绝、报 `REMOTE HOST IDENTIFICATION HAS CHANGED` 类文本、退出码 255。跑完恢复备份。
 - 判读：段一拒绝 → 选项不被支持或 `HostName` 写法问题（定名层）；**段二若照样放行，则 `accept-new` 实际等价 `no`，本文的安全假设为不合格**，必须记为不符而不是重试。失败归属：认脸层。
+
+> V6 未销账，且**派单建议的考法被实测证伪**：拿不可解析的宿主观察不到任何东西。实际输出 `ssh: Could not resolve hostname nosuchhost.invalid: Name or service not known`（Windows 版同一句但本地化成中文，管道里显示为八进制转义），指定的 `UserKnownHostsFile` **连文件都没被创建**，主 `known_hosts` 大小与 mtime 未变——未发生密钥交换，就没有首次提示，也没有落盘。本项真正的最小前置是「任意一个可 KEX 的 SSH 服务端」，不必是树莓派；本机没有（`sshd` 服务不存在、22 无监听、WSL 未装 `openssh-server`），装它属环境改动，待用户批准。
 
 **P4 递钥与判真**（先 Git Bash 版，失败再用 PowerShell 版对比，用来暴露权限静默拒）
 
@@ -75,6 +81,9 @@ ssh pi 'sleep 1; echo __DONE__'
 
 两客户端各跑。关注点：**`exit 255` 是否也返回 255**——返回即证实「仅凭退出码不可区分」，文档维持哨兵判据；若返回不同则文档第六节要改写。`out` 与 `err` 是否混在同一通道属执行层观察，一并记。失败归属：全 255 且无 `__DONE__` 时先回头看 P2/P3，不要当成远端命令失败。
 
+> V6 本机已完成「缺失侧」：`nosuchhost.invalid` 与 `127.0.0.1:2202` 两种连接层失败，两客户端均 `rc=255` 且 **stdout 为空**——即连接失败时 `__DONE__` 一定不出现，这条不依赖板子。剩余四项（`exit 255`、`false`、流分离、哨兵正例）需服务端。
+> 顺带一条通用坑，实测时必用：`ssh ... | sed` 之后读 `$?` 拿到的是管道末端的码。本机就吃过假 `rc=0`，同一命令不接管道重跑才是真 255。要同时留输出与退出码就分两步：`out=$(ssh ... 2>err.txt); rc=$?`。
+
 **P6 PATH 与 tty 三条对比**（首要未知项，两客户端各跑；只比远端输出，不比客户端）
 
 ```sh
@@ -85,6 +94,9 @@ ssh -t pi 'echo x' | od -c | head -2      # 看是否出现 \r \n 两字节
 ```
 
 要记的三件事：非交互的 `$0` 是什么（`sh` 还是 `bash`）、`tty` 是否报 `not a tty`、PATH 与交互登录相差哪几项。失败归属：差异属执行层（对端 profile 与 sshd 无 tty 语义），不回头怀疑递钥或通道。处置优先级按文档第六节：绝对路径 > 包 `bash -lc` > 不动 config。`-t` 那行的预期是输出里出现 `\r`；若没有，则第十节关于 pty 合并流的写法要按实测改。
+
+> V6 本机已完成的**只是客户端这一半**，且改了两条判断：① 「PATH 首位在不同终端下不是同一个」不成立——PowerShell 里 `Get-Command ssh.exe -All` 的首位是 `D:\Dev\Git\usr\bin\ssh.exe`，`cygpath -w /usr/bin/ssh` 给出的正是这个文件，所以 Git Bash 与 PowerShell 用的是同一个 9.9p1，9.5p2 只有写绝对路径才会用到；② `-t` 在 stdin 非终端时两客户端表现不同——msys 9.9p1 打印 `Pseudo-terminal will not be allocated because stdin is not a terminal.` 后继续尝试连接，`-tt` 不打印，Windows 9.5p2 两种都不打印。**9.5p2 是真分配了 pty 还是没有这条检查，本机无服务端测不出，不许写成结论。** 远端 `$0`/`tty`/`PATH` 三项与 `\r\n` 合并流仍全部待对端。
+> 另一个执行环境事实：WSL 是**独立机器级**环境（`HOME=/home/anwen`，`userknownhostsfile /home/anwen/.ssh/known_hosts`，该目录已另有一把 `id_rsa`，`ssh -V` = OpenSSH_8.9p1）。在 WSL 里跑的 agent 不继承 Windows 侧的别名、密钥与指纹。本清单所有命令默认在 Windows 侧跑；若接板人改用 WSL，等于换机器，config 与 known_hosts 要从 P1 重来。
 
 **P7 tmux 无 tty 下的 `-A`**（本文风险最高的一条，必须在 P6 之后：`capture-pane` 的输出判读依赖有没有 pty 与转义序列）
 
@@ -112,6 +124,9 @@ scp pi:/etc/hostname .
 
 四个关注点：两客户端的 `scp.exe` 是否都解析 `~/.ssh/config` 的别名（Windows 版若把 `pi:` 当主机名 → 定名层，属实测清单里最可能翻车的一条）；CRLF 报错的**实际文本**（回填第七节，别用我推测的 `\r: command not found`）；`sed` 修复后是否成功；反向取文件是否落对目录。
 
+> V6 本机已销掉「最可能翻车」那条：**两个 scp 都读 config**。判据是做了一次可区分的实验——config 里 `HostName nosuchhost.invalid` 时，Windows 与 msys 的 scp 都报 `Could not resolve hostname nosuchhost.invalid`；去掉 `-F` 后两者都改成报 `Could not resolve hostname pi`。别名解析与目标替换在两侧都成立，**不必等板子**。剩余：真实传输、Pi 端 CRLF 的实际报错文本、反向取文件落点。
+> 另外本机造样本可用（`printf 'echo hi\r\n'` 与 `od -c` 已确认 `\r \n` 两字节，`sed -i 's/\r$//'` 能修），但**本机跑不出那个失败**：msys 的 bash 对行尾 `\r` 是容忍的，`bash crlf.sh` 照样输出 `hi`。所以「CRLF 必报错」这条已从隐含事实降级为待验情形，报错文本必须在对端取。
+
 **P9 串口认口与终端参数**（需用户批准；**只读认口不打开端口**，不违反独占）
 
 ```powershell
@@ -120,6 +135,8 @@ scp pi:/etc/hostname .
 
 插上模块后再跑一次，**取差集**即目标口（`[本机实测]` 本机已有 COM3/COM19/COM22，号段与 CH340 常见号重叠，不可凭号猜）。未出现新条目 → 驱动未装，属电脑侧前置，先处理再谈参数。
 终端参数人工核对（PuTTY 未装时整条跳过）：`Serial line=COM<n>`、`Speed=115200`、`8`、`1`、`Parity=None`、`Flow control=None`。预期看到启动日志或 `raspberrypi login:`。失败归属：一片空白/乱码多数在对端接线与使能（TX/RX 未交叉、未共地、波特率不符、`enable_uart` 未生效），转 Pi 侧稿；电脑侧只自查 COM 号、Flow control、驱动三项。
+
+> V6 本机只跑了这条里唯一不依赖硬件、也不占用端口的那半：`[System.IO.Ports.SerialPort]::GetPortNames()` 实际返回 `COM19,COM22,COM3`，与第一节现状表一致，**调用只读枚举、没有打开任何 COM 口**。剩下的「插拔取差集」必须有模块在手、且参数核对必须有人批准装 PuTTY，两条都在用户串行安排范围内，本窗口一律未碰。
 
 **P10 回填规则**：只有实跑输出与预期一致才改标记，且改成 `[对端实测]` 不是 `[本机实测]`（后者定义是「与 Pi 无关」）；不符就改文档的表而不是解释，并在变更记录写明改了哪条。顺带跑一次 `Resolve-DnsName raspberrypi.local`（只影响人工临时排查能否用 `.local`，不改变自动化写 IP 的取舍）。
 
@@ -141,3 +158,16 @@ scp pi:/etc/hostname .
 - 未裁决分歧并列四条（主机名 vs IP、新镜像默认账户与 SSH 是否预置、串口是否引入 PuTTY/plink 依赖、ttyd 是否留档），写入文档第十一节，禁止互抄。
 - 首要未知：非交互 shell 的 PATH / tty 差异方向（决定 agent 调用是否统一包 `bash -lc`）；次为 `accept-new` 对真服务器、tmux 无 tty 下 `-A`、本机 mDNS 能否解析 `.local`。
 - 本窗口未做：不动 `rpi-headless-access.md`（是否删除由编排会话归并时定）、不改 `current.md`、不写 `timeline.md`（任务未实机收尾）、不 push、不合 `main`。
+## V6 本机销账（2026-10-15，已交付）
+
+派单要点：板子不在场，但清单里一批项其实不需要 Pi，逐项判定后能本机跑的真跑掉，跑掉的改 `[本机实测]` 并附实际命令与输出，真需要板子的不改判、清单收敛。
+
+- 执行环境（写进文档第一节，换机器或换版本需重跑）：Windows 10.0.26300.0 x64；三个 ssh 实现——msys `OpenSSH_9.9p1`（`D:\Dev\Git\usr\bin\ssh.exe`）、`C:\WINDOWS\System32\OpenSSH\` 的 `OpenSSH_for_Windows_9.5p2`、WSL Ubuntu-22.04 的 `OpenSSH_8.9p1`。
+- 本机已销账（正文对应处已升为 `[本机实测]`，均与 Pi 无关）：`accept-new` 的**解析层**（三客户端都认，且用 `StrictHostKeyChecking bogus` 得 `unsupported option "bogus"` + `rc=255` 作对照，证明 `-G` 会校验取值）；config 的**匹配顺序**（特定块覆盖 `Host *`，`user` 由 `Host *` 补位；结论前提是某键只出现在一个匹配块，排查先 `ssh -G`）；`HostName` 单点隔离写法（改 config 一处即改目标，命令行永远 `ssh pi`）；退出码哨兵的**缺失侧**（连接失败时 rc=255 且 stdout 无 `__DONE__`）；`-t` 在无 tty 下的**客户端提示差异**；scp 是否读 config 别名（两侧都读）；`GetPortNames()` 只读认口。
+- 两处推翻本窗口旧假设：① 「PowerShell 与 Git Bash 命中的是不同 ssh 客户端」不成立——PowerShell 的 PATH 首位同样是 `D:\Dev\Git\usr\bin\ssh.exe`，`cygpath -w /usr/bin/ssh` 指向同一文件；差异只存在于显式写绝对路径时。② 「CRLF 脚本必致 bash 报错」在本机跑不出来——msys bash 容忍行尾 `\r`，`bash crlf.sh` 照样输出 `hi`；该条降级为对端待验情形，报错文本必须在 Pi 上取。
+- 派单给的一种考法被实测证伪：用「不可解析的宿主」观察 `accept-new` 行为**测不出任何东西**——`Could not resolve hostname nosuchhost.invalid` 之后根本不做密钥交换，`UserKnownHostsFile` 连文件都没创建，主 `known_hosts` 字节数与 mtime 均未变。行为层仍 `[待对端实测]`，且只需**任意可 KEX 的服务端**、不必是板子；本机当下没有（`sshd` 服务不存在、22 无监听、WSL 未装 `openssh-server`），装它属环境改动，**待用户批准**，批准即可提前销掉 P3/P5 的行为层。
+- 一个过程中的坑（已写入第六节）：`ssh ... | sed` 之后读 `$?` 拿到的是管道末端的码，实测出现过假 `rc=0`；正确写法是 `out=$(ssh ... 2>err.txt); rc=$?`。
+- 未改判的两类：涉及默认账户名处一律只加「账户基线待 V5 结论」（V5 由 `qoder-a` 裁决中，不代判）；V1 已判裸 `hdmi` 键不存在、禁用 HDMI 用 `hdmi_ignore_hotplug=1`，但本文没有 `hdmi` 引用点，故无需传导。
+- 清单收敛后剩下的项：PATH/tty 三条对比、tmux 无 tty 下 `-A`、递钥与判真、scp 真实双向传输、CRLF 在 Pi 端的报错、串口插拔认口与参数、mDNS 判据——全部需要板子在场（或按上一条装本机服务端）。
+- 硬约束遵守情况：未占用 COM 口、未连接任何外部主机、未改 `rpi-network.md`/`current.md`/他人 timeline；正文只在错位处动刀，未新增任何对 Pi 的实测。
+- 交付：`docs/pi/rpi-ssh.md` v6（变更记录已写明两处推翻、被证伪的考法、V5 未改判）、本清单头部与各条下的 V6 注记、认领行已删、`git rm` 本窗口 dispatch 文件随本提交。
