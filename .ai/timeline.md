@@ -6,6 +6,8 @@
 - 决策：合稿主轴。接入类按「Pi 侧 / 电脑侧」分两篇，串口作救援章（接线归 Pi 侧、终端参数归电脑侧），主干取 `rpi-network.md`（证据标注体系最全）与 `rpi-ssh.md`（唯一含本机 `[事实]` 实测），`rpi-headless-access.md` 拆完即删。GPIO 类合两篇：`rpi-gpio-pinout.md` 为引脚与电气主干，`rpi-gpio-control.md` 并入其后半，SWD/CW32 独立成章；`rpi-3b-hardware.md` 退为规格/功耗/选型/上手参考。
 - 决策：跨文档分歧一律不得互抄裁决，须实测或权威手册择一。已实测出的分歧点：`nmcli ipv4.dns` 多值分隔符、新镜像默认账户与 SSH 预置、`raspberrypi.local` vs 只用 IP、引脚表在针 16/SPI0 MOSI/针 38/GPIO 计数/硬件 PWM 上的两处不一致。根因：多窗口并行写同一事实会在多处各自漂移，互抄只会把错误扩散并伪装成「多篇都这么写」。
 - 决策：`main` 推送 `origin` 并在合稿前跑一次「同步所有 tree」，让四个窗口在最新落点上开工。
+- 决策：编排窗口标识固定为 `main`，窗口 context 为 `.ai/contexts/main.md`，派生规则中目录一项对它例外（就是主 worktree）。此前该标识空缺，编排会话的长期记录没有落点。
+- 决策：文档落点变成可机检断言并入 `check-agents.sh`——仓库根只留 `README.md`/`AGENTS.md`/`CLAUDE.md`/`QODER.md`，`.ai/` 只留 `current.md`/`timeline.md`。根因：落点靠口头约定在四个窗口并行下必然漂移，本轮实测已散到三处目录；断言违规退出码 1 才拦得住。正反验证：临时根文档与 `.ai/rpi-notes.md` 各命中一条 FAIL，删除后恢复「合规」。
 - 验证：`git mv` 后 grep 旧文件名与旧目录，文档内无残留引用（`contexts/` 内历史陈述按约定保留）；`sh scripts/sync-agents.sh` 四窗口全 `OK 已跟上 main`，校验 8 条 PASS、退出码 0。
 - 方法记录：重叠分析用两个只读子代理分别读接入类 4 篇、GPIO 类 3 篇，输出重复清单、矛盾清单、独有要点与合并建议，主上下文只保留结论。
 

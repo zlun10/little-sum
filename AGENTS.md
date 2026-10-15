@@ -34,6 +34,7 @@
 - 窗口标识为小写字母、数字和短横线，不含 `/`，如 `qoder-a`、`minimax-1`。分支名 = 窗口标识 = `.ai/contexts/<窗口标识>.md`，worktree 目录固定为 `../<窗口标识>-worktree`，四者由同一标识派生。
 - 建立：`git worktree add "../<窗口标识>-worktree" -b <窗口标识>`，从 `main` 最新提交建立，否则该工作树内没有本约定与校验脚本。
 - 主 worktree 只归编排会话使用，负责 `current.md` 归并、各窗口分支合并与提交。
+- 编排会话的标识固定为 `main`：分支为 `main`，窗口 context 为 `.ai/contexts/main.md`；派生规则中「目录 = `../<窗口标识>-worktree`」对它例外，就是主 worktree 本身。
 - 编排会话可代 worker 提交其 worktree 内未跟踪的 `.ai/contexts/<窗口标识>.md`：只在所属 worktree 内按明确路径 `git add` 后提交，不改写文件内容，不处理他人已跟踪的改动。理由是该文件若先由 `main` 建为同名跟踪文件，worker 的 `git merge main` 会被 git 拒绝，窗口卡死。
 - 用户说「同步所有 tree」时，在主 worktree 执行 `sh scripts/sync-agents.sh`，固定两步：先收——代提交各窗口未跟踪的 `.ai/contexts/<分支>.md`，再把各分支已提交内容 merge 进 `main`（冲突则 `git merge --abort`，`main` 不变）；后放——对每个窗口 `git merge --ff-only main`。他人的其他未提交改动只报 WARN 不代处置；`main` 工作区不干净时脚本退出码 2，不做任何合并。
 - 编排会话的结论只写 `.ai/current.md` 与 `.ai/timeline.md`，不改他人 worktree 内的 context 内容；反向传递靠窗口 `git merge main`，同机共享对象库，无需 fetch 或 push。

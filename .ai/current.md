@@ -1,8 +1,8 @@
 # 当前现状
 
 - 仓库仍是文档期，无业务代码、构建与测试入口；产出全部是 `docs/pi/` 下的树莓派 3B 参考文档。目标记于 `README.md`：一台树莓派 3B，全程使用廉价/免费 agent。3B 是 Linux 上位机形态，不能充当 USB-CMSIS-DAP 探针（那需要 Pico/RP2040，是否购置未确认）。
-- 并行约定：分配单位是 agent 窗口，标识 = 分支名 = `.ai/contexts/<标识>.md` = 目录 `../<标识>-worktree`；`.ai/current.md` 由主 worktree 单写者归并；结论传递只走 `current.md`/`timeline.md` 与 `git merge main`。已占用标识：`qoder-a`、`qoder-b`、`minimax-a`、`minimax-b`；本会话是编排窗口，不新建 worktree。
-- 入口：校验 `sh scripts/check-agents.sh`（违规退出码 1）；「同步所有 tree」→ 主 worktree 执行 `sh scripts/sync-agents.sh`，先收后放，`main` 不干净时退出码 2 不做任何合并。
+- 并行约定：分配单位是 agent 窗口，标识 = 分支名 = `.ai/contexts/<标识>.md` = 目录 `../<标识>-worktree`；`.ai/current.md` 由主 worktree 单写者归并；结论传递只走 `current.md`/`timeline.md` 与 `git merge main`。已占用标识：worker `qoder-a`、`qoder-b`、`minimax-a`、`minimax-b`，编排窗口标识固定为 `main`（目录即主 worktree，见 `AGENTS.md`）。
+- 入口：校验 `sh scripts/check-agents.sh`（违规退出码 1，含文档落点断言：仓库根只留 `README/AGENTS/CLAUDE/QODER.md`，`.ai/` 只留 `current.md`/`timeline.md`）；「同步所有 tree」→ 主 worktree 执行 `sh scripts/sync-agents.sh`，先收后放，`main` 不干净时退出码 2 不做任何合并；文档索引见 `README.md`。
 - 已同步状态（2026-10-15 快照，以运行时输出为准）：四个窗口 HEAD 均等于 `main`，工作区干净，校验结论「合规」；`main` 已推送，与 `origin/main` 一致。
 - 文档落点已归一：7 篇全部在 `docs/pi/`，文件名统一 `rpi-` 前缀，仓库根与 `.ai/` 下不再有文档；文内交叉引用已修正。`.ai/contexts/` 内引用旧路径的历史陈述按约定不改写。
 
@@ -19,6 +19,5 @@
 
 ## 未决
 
-- 编排窗口自身无标识，`AGENTS.md` 未给 `contexts/<标识>.md` 对应名。
 - 树莓派 3B 要解决的 CW32 开发痛点、首个可执行目标与验证入口仍未确认；文档期结束后进入什么形态未定。
 - 硬件独占资源（串口、调试探针、OpenOCD 3333/4444）不在并行约定内，接硬件联调前需补占用规则。

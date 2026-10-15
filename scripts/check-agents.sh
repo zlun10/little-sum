@@ -6,6 +6,7 @@
 #   4 不存在游离的 .ai/current-*.md
 #   5 linked worktree 的当前分支有同名 context 文件
 #   6 .ai/contexts 下不得分层存放
+#   7 文档落点：仓库根只留四个入口文件，.ai/ 只留 current.md 与 timeline.md
 # 主 worktree 运行时另列出各 linked worktree 中尚未归并的 context 文件（INFO，不判违规）。
 set -u
 
@@ -101,6 +102,22 @@ fi
 
 for f in .ai/current-*.md; do
   if [ -e "$f" ]; then report FAIL "游离文件 $f"; fi
+done
+
+root_ok=" README.md AGENTS.md CLAUDE.md QODER.md "
+for f in *.md; do
+  if [ ! -f "$f" ]; then continue; fi
+  if [ "${root_ok#* $f }" = "$root_ok" ]; then
+    report FAIL "仓库根不应放文档: $f（落点见 README.md，文档归 docs/）"
+  fi
+done
+for f in .ai/*.md; do
+  if [ ! -f "$f" ]; then continue; fi
+  b=$(basename "$f")
+  case "$b" in
+    current.md|timeline.md|current-*.md) : ;;
+    *) report FAIL ".ai/ 只留 current.md 与 timeline.md，文档应归 docs/: .ai/$b" ;;
+  esac
 done
 
 if [ "$linked" = 0 ]; then
