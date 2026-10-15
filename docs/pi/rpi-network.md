@@ -8,26 +8,43 @@
 
 ## 镜像与默认账户基线
 
-两组说法并存，未实机裁决，**都保留**（`[待验证]`）：
+2026-10-15（V5）对官方文档核完，**两说各对应一个时间段，不再并存**：
 
-| 议题 | 说法一（来自 `rpi-headless-access.md`） | 说法二（本文原有条目） |
+| 镜像 | 首次登录账户 | SSH 是否开箱可用 |
 |---|---|---|
-| 默认账户 | 预置用户 `pi`、密码 `raspberry`，首次登录强制改密 | 新版镜像不预置 `pi`，需在 Raspberry Pi Imager 高级设置里自设用户名密码 |
-| SSH 是否开箱可用 | 默认主机名 `raspberrypi`、已开 mDNS，直接 `ssh pi@raspberrypi.local` | 默认**不**启用 SSH；需 Imager 勾选，或进系统后 `systemctl enable --now ssh` |
-| 串口登录凭据 | 与 SSH 同一账户，串口里改密码 SSH 侧同步生效 | 同 |
+| 早期镜像（有 `pi` 的年代） | 预置 `pi`、密码 `raspberry`，首登强制改密 | 是，`ssh pi@<IP>` 直接可用 |
+| 当前镜像 | **不预置 `pi`**，用户名密码由 Imager 自定义设置的 *User* 子标签设定，或由首启向导创建 | 默认**不**启用。官方原文：「By default, Raspberry Pi OS disables the SSH server.」 |
 
-判别方法（拿到板子第一步就全套跑完，再据结果择一，不要靠猜）：
+分界的时间锚点（官方仓库自身的记录，不是博客）：
+
+- issue #2537 `raspberrypi/documentation`，2022-05-11 提出，标题「Update references to the default user/pass」，正文首句「Now the default user has been removed we need to update all references to a default user/pass」。→ 默认账户的移除**最晚在 2022-05-11 之前已生效**，当时代际是 Bullseye。
+- PR #3310（分支 `default-user-retcon`），2023-12-08 合并，把示例里残留的 `pi`/`raspberry` 从官方文档全部清除。→ **说法一不是误传，是过期**：2022-05 到 2023-12 这扇窗口里官方页面自身还写着 `pi`/`raspberry`，教程照抄，于是流传至今。
+- `[待验证]` **确切从哪一次镜像发布起移除**，官方文档不按发布日期陈述，手册裁不了；本仓库这张 SD 卡属于哪一边，用下面的板上判据落实。
+
+依据（raspberrypi.com 页面对本机返回 403，全部改取 `raspberrypi/documentation` 仓库同源 adoc，路径写明）：
+
+- `documentation/asciidoc/computers/remote-access/ssh.adoc` —— SSH server 默认禁用。
+- `documentation/asciidoc/computers/getting-started/install.adoc` —— Imager 自定义设置里的 *User* 子标签设定用户名与密码，属必做项。
+- `documentation/asciidoc/computers/getting-started/configuring.adoc` —— 首启向导创建账户。
+- `documentation/asciidoc/computers/getting-started/setting-up.adoc` —— 「Manual setup for SSH」：boot 分区要**同时**放一个空的 `ssh` 文件和 `userconf.txt`（内容 `<用户名>:<密码哈希>`，哈希用 `openssl passwd -6` 生成），只放 `ssh` 不生效。
+- `documentation/asciidoc/computers/configuration/interfaces.adoc` —— 已在系统内的三种开法：`touch /boot/firmware/ssh` 后重启、桌面 Control Centre → Interfaces、`raspi-config` → `3 Interface Options → I1 SSH`。
+
+说法一不是误传，是**过期**：官方文档仓库 issue #2537（2022-05-11）已记录「默认用户已被移除」，而示例中的 `pi`/`raspberry` 直到 PR #3310（分支 `default-user-retcon`，2023-12-08 合并）才从全部文档示例里清除。这扇窗口里官方页面自身还在教 `pi`/`raspberry`，教程照抄，于是流传至今。
+
+**这块板子属于哪一边，手册裁不了**（取决于 SD 卡镜像的下载日期），维持 `[待验证]`，板上判据进了「仍需上板实测」表。因此本文所有示例的用户名一律写 `<用户>` 占位，不写死 `pi`。
+
+判别方法（拿到板子第一步全套跑完）：
 
 ```bash
-cat /etc/os-release
-ls /boot/firmware/ 2>/dev/null || ls /boot/
-systemctl is-enabled ssh
-id pi 2>/dev/null
+cat /etc/os-release          # VERSION_CODENAME 只给代际上界；移除发生在 Bullseye 周期内，单靠它不够
+ls /home                     # 没有 pi、只有别的目录 = 当前镜像
+systemctl is-enabled ssh     # SSH 开没开
+ls /boot/firmware/ 2>/dev/null || ls /boot/   # 有无 ssh / userconf.txt 预置文件
 ```
 
-前两行定镜像代际，后两行直接回答「SSH 开没开、有没有 `pi` 这个用户」。这条基线不落实，下面所有「先连进去」的步骤都无从判断成败。
+串口登录用的是同一个账户、同一套凭据，串口里改密码 SSH 侧同步生效；这条基线不落实，下面所有「先连进去」的步骤都无从判断成败。
 
-上表之外还有一处分歧是**用什么地址连**：源文档主张 `ssh pi@raspberrypi.local`（依赖 mDNS），本文既有决策是「只用 IP」。这里不属未实测的技术分歧，而是取舍——mDNS 只是省得查 IP，它不保证可用（且 VPN 会改 DNS 后缀、可能拦多播，见「与 VPN 共存」）。因此文档与脚本一律写 IP，mDNS 名只作人工临时排查的便利手段，不进任何自动化调用。
+另有一处**不是代际问题、是取舍**的分歧：用什么地址连。源文档主张 `ssh pi@raspberrypi.local`（依赖 mDNS），本文既有决策是「只用 IP」。这里不属未实测的技术分歧，而是取舍——mDNS 只是省得查 IP，它不保证可用（且 VPN 会改 DNS 后缀、可能拦多播，见「与 VPN 共存」）。因此文档与脚本一律写 IP，mDNS 名只作人工临时排查的便利手段，不进任何自动化调用。
 
 ## 接口盘点
 
@@ -180,7 +197,7 @@ sudo cp /boot/firmware/cmdline.txt /boot/firmware/cmdline.txt.bak
 | 事项 | 板上判据 |
 |---|---|
 | 这台 3B 的图形驱动路径（KMS 是否默认启用）——决定上面 3 里那批 `hdmi_*` 旧键到底生效不生效 | `grep -n 'vc4-kms-v3d\|vc4-fkms-v3d' <config.txt 实际路径>`（`#` 注释行不算启用）、`ls /dev/dri`、`journalctl -b \| grep -i vc4` |
-| 镜像代际与默认账户/SSH 基线 | 「镜像与默认账户基线」那四条探测命令 |
+| 这块 3B 的 SD 卡落在基线节的哪一边（`pi`/`raspberry` 还能不能用、SSH 是否开箱在听）——官方只说「默认用户已移除」发生在 2022-05-11 之前，不按发布日期给出精确分界，本机装的是哪张镜像更不可能由手册裁出 | `cat /etc/os-release`（看 `VERSION_CODENAME`）、`ls /home`（有无 `pi` 目录）、`systemctl is-enabled ssh`、`ls /boot/firmware/ 2>/dev/null \|\| ls /boot/`（有无 `ssh`/`userconf.txt`）；四条判据见「镜像与默认账户基线」 |
 | `gpu_mem` 实际生效值（默认表是按容量推的，未在这块板上读过） | `vcgencmd get_mem gpu`，交叉核对 `vcgencmd get_config int` |
 | `nmcli` 静态配置后 DNS 是否两个都落盘（分隔符按官方示例选了空格） | 见「地址固定」小节的回读命令 |
 | 复合视频在 3B 上是否真的默认可输出（默认值 `1` 是文档结论） | 接 AV 线观察，或 `grep -in 'tvout\|sdtv' <config.txt>` 看有无显式覆盖 |
@@ -288,7 +305,7 @@ systemctl list-units --type=target --state=active  # 当前活跃的 target，�
 
 ## 无头预置与持久化
 
-- `[待验证]` **Bookworm 及之后的镜像不再读 boot 分区的 `wpa_supplicant.conf`**，老办法静默失效；预置 WiFi 要用 Raspberry Pi Imager 的高级设置，或挂载 rootfs 写 NetworkManager keyfile。
+- `[待验证]` **Bookworm 及之后的镜像不再读 boot 分区的 `wpa_supplicant.conf`**，老办法静默失效；预置 WiFi 要用 Raspberry Pi Imager 的高级设置，或挂载 rootfs 写 NetworkManager keyfile。官方原文（`documentation/asciidoc/computers/getting-started/setting-up.adoc`）：「Previous versions of Raspberry Pi OS made use of a `wpa_supplicant.conf` file, which can be placed into the boot folder to configure wireless network settings. This functionality isn't available from Raspberry Pi OS *Bookworm* and onwards.」`[待验证]` 只针对**这块板子的镜像是否已在 Bookworm 及之后**，不针对该行为本身。
 - keyfile 路径：`/etc/NetworkManager/system-connections/*.nmconnection`，权限必须 `600`，属主 `root:root`，否则 NM 拒绝加载。`[待验证]`
 - dhcpcd 系写 `/etc/dhcpcd.conf`。`[待验证]`
 - 版本分叉必须先判定，命令：`cat /etc/os-release`、`systemctl is-active NetworkManager dhcpcd systemd-networkd`。
@@ -296,10 +313,11 @@ systemctl list-units --type=target --state=active  # 当前活跃的 target，�
 
 ## SSH 服务端
 
-- 是否开箱就有 SSH 与默认账户绑定，见「镜像与默认账户基线」——两说并存，先用那里的四条探测命令落实，不要照抄任一侧。
-- 已在系统内：`sudo systemctl enable --now ssh`，用 `ss -tlnp 'sport = :22'` 确认在听、`systemctl is-enabled ssh` 确认开机自启。
+- 是否开箱就有 SSH 与默认账户绑定，见「镜像与默认账户基线」——已由官方文档裁决：当前镜像**默认不启用 SSH、也不预置 `pi`**，`pi`/`raspberry` 直连只适用于早期镜像。这块板子属于哪一边仍未实测，用基线节那四条命令落实。
+- 无头（不接显示器）启用 SSH 的官方预置法：boot 分区**同时**放一个空的 `ssh` 文件与 `userconf.txt`（内容 `<用户名>:<密码哈希>`，哈希用 `openssl passwd -6 '<密码>'` 生成）。只放 `ssh` 不生效——新镜像没有可登录的账户，sshd 起来也没人进得去。出处：`documentation/asciidoc/computers/getting-started/setting-up.adoc` 的「Manual setup for SSH」。`[待验证]` 该机制在 Bookworm 与 Trixie 上的文件名/路径是否一致，未上板确认。
+- 已在系统内：`sudo systemctl enable --now ssh`，官方另给两条等价入口——`touch /boot/firmware/ssh` 后重启，或桌面 Control Centre → Interfaces / `raspi-config` → `3 Interface Options → I1 SSH`（`documentation/asciidoc/computers/configuration/interfaces.adoc`）。用 `ss -tlnp 'sport = :22'` 确认在听、`systemctl is-enabled ssh` 确认开机自启。
 - 控制面统一为「电脑主动连 Pi」，Pi 反向连出不推荐；地址用 IP（本文既有决策）。
-- 公钥登录在 Pi 侧的落点：公钥进 `<用户>~/.ssh/authorized_keys`，目录 `700`、文件 `600`，属主是该用户本身。权限不对时 sshd 会**静默拒绝公钥**、退回密码提示，看起来像「公钥没生效」。核查：`sudo ls -ld ~/.ssh ~/.ssh/authorized_keys`。
+- 公钥登录在 Pi 侧的落点：公钥进 `<用户>` 的 `~/.ssh/authorized_keys`，目录 `700`、文件 `600`，属主是该用户本身。权限不对时 sshd 会**静默拒绝公钥**、退回密码提示，看起来像「公钥没生效」。核查：`sudo ls -ld ~/.ssh ~/.ssh/authorized_keys`。
 - 关闭密码登录（`/etc/ssh/sshd_config` 里 `PasswordAuthentication no`）的顺序是硬约束：**先在串口或本地控制台留着一条能改回来的通道**，再用新会话验公钥能进；只改完就断开当前会话，一旦公钥没生效就只能走串口救砖。改后 `sudo systemctl restart ssh`。`[待验证]` 部分镜像还有 `sshd.service` 命名差异，`systemctl status ssh sshd` 两个都看一眼。
 - 电脑侧的操作全部归 `rpi-ssh.md`：客户端选择与 PATH 差异、`~/.ssh/config` 的 `Host pi` 别名、必须显式写 `User`、known_hosts 预置、密钥复用与不启用 ssh-agent、公钥推送的具体命令、scp/WinSCP、PuTTY 串口参数。本文不重复，避免两处改一处漏改。
 
@@ -319,13 +337,13 @@ systemctl list-units --type=target --state=active  # 当前活跃的 target，�
   [Service]
   ExecStart=/usr/bin/ttyd -p 7681 -W bash
   Restart=on-failure
-  User=pi
+  User=<用户>
 
   [Install]
   WantedBy=multi-user.target
   ```
 
-  `User=pi` 要与实际账户一致，账户基线未落实前不要启用（见「镜像与默认账户基线」）。
+  `User=<用户>` 要与实际账户一致（基线一节已裁决新镜像不预置 `pi`，账户名以板上 `ls /home` 实测为准），账户基线未落实前不要启用。
 - 默认**无认证**，只在受信局域网内开，不做公网映射；不需要时 `sudo systemctl disable --now ttyd` 并删 unit。
 
 ## 排障顺序
@@ -425,9 +443,11 @@ Pi 侧三个必查点：
 - `rpi-gpio-pinout.md` —— 40 针完整引脚表与电气参数；本文只列串口那三根线。
 - `rpi-3b-hardware.md` —— SoC 规格、功耗、型号选型与上手清单。
 - `rpi-headless-access.md`、`rpi-display-headless.md` —— A1 合稿的来源，内容已全部并入本文与 `rpi-ssh.md`，两文件已由编排会话删除。文内若再出现同名提法，属历史记录。
+- 待编排会话跨稿同步（V5）：`rpi-ssh.md` 认领在 qoder-b 名下，本窗口未触碰。该文件的示例若仍把用户名写成 `pi`（`ssh pi@…`、`User` 之类），按本文「镜像与默认账户基线」的裁决改为 `<用户>` 占位——当前镜像不预置 `pi`。`Host pi` 这种别名不算，那是主机别名不是账户名。
 
 ## 状态
 
+- 2026-10-15（V5 手册核对，本窗口）：最后一条未裁决的分歧「新镜像默认账户与 SSH 是否预置」由官方文档裁完，两说不再并存——**当前镜像不预置 `pi`、默认禁用 SSH**（`remote-access/ssh.adoc` 原文「By default, Raspberry Pi OS disables the SSH server.」，账户由 `getting-started/install.adoc` 的 Imager *User* 子标签或 `configuring.adoc` 的首启向导创建）；`pi`/`raspberry` 直连只适用于早期镜像。官方文档自身的滞后解释了说法一为何流传：issue #2537（2022-05-11）首句已写「Now the default user has been removed…」，示例里的 `pi`/`raspberry` 却到 PR #3310（分支 `default-user-retcon`，2023-12-08 合并）才清干净。无头启用 SSH 的官方预置法是 boot 分区**同时**放空 `ssh` 与 `userconf.txt`（`setting-up.adoc` 的「Manual setup for SSH」，哈希用 `openssl passwd -6`），只放 `ssh` 不足以登录。据此本文全部示例用户名改为 `<用户>` 占位（含 ttyd unit 的 `User=`），基线节的探测命令把 `id pi` 换成 `ls /home`；`bootfs` 里 `wpa_supplicant.conf` 自 Bookworm 起失效原为推断，现补上官方原文。**仍未裁决**：移除动作对应哪一次镜像发布，官方不按发布日期陈述，本机装的又是哪一张，维持 `[待验证]` 并把四条板上判据写进「仍需上板实测」。本轮**未新增任何实测**，无 `[待验证]` 升格；`rpi-ssh.md` 的同名示例未改（认领在 qoder-b），只在「与其他文档的分工」留了同步提示。
 - 2026-10-15（V1 手册核对，本窗口）：显示侧 4 条存疑与 nmcli DNS 分隔全部对官方文档核完，结论集中在「手册核对结论」与「仍需上板实测」两节。**四条里三条由手册裁决**：裸 `hdmi` 键不存在（`hdmi=0` 弃用，禁用 HDMI 改用 `hdmi_ignore_hotplug=1`——这同时纠正了上一条把 `hdmi=0` 简单判给 `hdmi_force_hotplug=1` 的择一，两个需求方向相反）；`enable_tvout` 在 3B 上默认即为 `1`，源文档「3B 要显式开启且与 HDMI 互斥」的机型判断是反的，3B 的复合视频参数是 `sdtv_mode` 一族；`gpu_mem` 默认 `76` 成立但依据是「内存 ≥1 GB」而不是机型。**第四条（3B 是否默认启用 KMS）官方文档没有按机型陈述默认值，仍无法裁决**，维持 `[待验证]`。nmcli `ipv4.dns` 多值分隔裁决为空格加引号（nmcli-examples(7) 官方示例），逗号写法已从命令中删除——逗号在官方属性表里只对 `ipv4.addresses` 有依据；「地址固定」小节的回读断言保留，因为这条仍是文档结论、不是板上结果。本轮**未新增任何实测**，`[待验证]` 一条未升格。
 - 2026-10-15（编排会话收尾）：补 `hdmi_drive=2`、`systemctl list-units --type=target --state=active` 两条来自 `rpi-display-headless.md` 的条目；新增「网页终端 ttyd（Pi 侧）」节（安装、`ttyd -p 7681 -W bash`、systemd 常驻），关掉 `rpi-ssh.md` 把安装推给本文却无处可查的裂缝；VNC 一节的客户端指向改为 RealVNC Viewer。**两个来源文件（`rpi-headless-access.md`、`rpi-display-headless.md`）内容归并完毕后删除。**本条未新增任何实测：源稿里 `vcgencmd get_gpu_mem` 与 `hdmi=0` 两条按键名正确性判给主干现写法（`get_mem gpu`、`hdmi_force_hotplug=1`），属文档内部择一，不是实测结论。
 
@@ -440,5 +460,5 @@ Pi 侧三个必查点：
 - 2026-10-15：新增「上行链路选项」节，区分控制链路与上网链路两个维度。
 - 2026-10-15 纠错：初版把 wlan0 写成与 eth0 共用 USB 2.0 总线，实际 3B 无线走 SDIO、只有 smsc95xx 以太网在 USB 上。涉及总线归属的推断已全部复核。
 - 2026-10-15：成文，**全部未实机验证**。未知项清单：SD 卡镜像代际与默认账户/SSH 基线（决定「连进去」的一切前提）、无头预置与静态写法随代际分叉、显示侧 4 个键名/默认值、PureVPN 后台能否导出配置文件与专用密码机制。
-- 下一步顺序：跑「镜像与默认账户基线」的四条探测命令落实代际与账户 → 按结果择一改写该节 → 落实「仍需上板实测」表里的图形驱动路径一条（决定 `hdmi_*` 旧键在这台 3B 上生效与否）→ 配 WiFi 主通道那四项（国家码、随机 MAC、省电、蓝牙共天线）→ 用「排障顺序」0–5 逐条跑通 → 后台拿 VPN 配置（`.conf` 优先，其次 `.ovpn`）→ 装 wireguard-tools 或 openvpn 并连上 → 验证三连。link-local、静态直连与路线 A/B（借电脑代理、自跑 TUN 内核）留作备选，不排在关键路径上。
+- 下一步顺序：跑「镜像与默认账户基线」的四条判据确认本板落在哪一边（该节已由官方文档裁决，板上只需确认、不再择一）→ 落实「仍需上板实测」表里的图形驱动路径一条（决定 `hdmi_*` 旧键在这台 3B 上生效与否）→ 配 WiFi 主通道那四项（国家码、随机 MAC、省电、蓝牙共天线）→ 用「排障顺序」0–5 逐条跑通 → 后台拿 VPN 配置（`.conf` 优先，其次 `.ovpn`）→ 装 wireguard-tools 或 openvpn 并连上 → 验证三连。link-local、静态直连与路线 A/B（借电脑代理、自跑 TUN 内核）留作备选，不排在关键路径上。
 - 本窗口是 linked worktree，只迭代 `docs/pi/rpi-network.md` 与本窗口 context；`.ai/current.md` 与 `.ai/timeline.md` 归编排会话写。

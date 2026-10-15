@@ -3,7 +3,7 @@
 - owner: qoder
 - date: 2026-10-15
 - branch: qoder-a
-- base: f96d7e8
+- base: 59d0763
 
 ## 树莓派 3B 网络方案
 
@@ -43,3 +43,13 @@
 - 依据来源：raspberrypi.com 的发布页对本机反爬返回 403，改从 `raspberrypi/documentation` 仓库取同一份 adoc 源文件逐条比对（`legacy_config_txt/video.adoc`、`legacy_config_txt/memory.adoc`、`config_txt/video.adoc`、`config_txt/what_is_config_txt.adoc`）；NetworkManager 侧取 `man/nmcli-examples.xml` 与 `src/nmcli/gen-metadata-nm-settings-nmcli.xml.in`。搜索命中的博客与中文教程一律未采信。
 - 改动范围：只动 `docs/pi/rpi-network.md`（表内新增 `hdmi_ignore_hotplug`/`sdtv_mode` 两行与 `gpu_mem` 默认值说明、「存疑项」改写为「手册核对结论 + 仍需上板实测」两节、地址固定小节改命令、状态加一条 V1 条目）。未新增任何实测，`[待验证]` 无升格。
 - 仍需上板实测（本轮解决不了的）：3B 的图形驱动路径（KMS 是否默认启用）、镜像代际与默认账户/SSH 基线、`gpu_mem` 实际值、nmcli 静态配置后两个 DNS 是否都落盘、3B 复合视频是否真的默认可输出。
+
+## V5：裁决「新镜像默认账户与 SSH 是否预置」（2026-10-15，只查权威手册，板子不在场）
+
+- 结论：两说按时间段归位，不再并存。**当前镜像不预置 `pi`、SSH 默认禁用**；`pi`/`raspberry` 首登只适用于早期镜像。官方原文（`documentation/asciidoc/computers/remote-access/ssh.adoc`）：「By default, Raspberry Pi OS disables the SSH server.」账户创建路径两条：`getting-started/install.adoc`（Imager 自定义设置 → *User* 子标签，用户名必须小写、只含字母数字下划线短横线）与 `getting-started/configuring.adoc`（首启向导「Configure your username and password for the default user account」）。
+- 时间线锚点（官方仓库自身记录）：issue #2537（`raspberrypi/documentation`，2022-05-11，标题「Update references to the default user/pass」）首句「Now the default user has been removed…」证明移除在该日期前已生效，当时代际是 Bullseye；PR #3310（分支 `default-user-retcon`，2023-12-08 合并）才把示例中残留的 `pi`/`raspberry` 清除。2022-05→2023-12 这段窗口官方页面自相矛盾，是说法一的来源，不是社区误传。
+- 精确分界裁不了：官方不按发布日期陈述这次移除，本 SD 卡装的又是哪一张更无从由手册得知。维持 `[待验证]`，板上判据四条写进「仍需上板实测」——`cat /etc/os-release`、`ls /home`、`systemctl is-enabled ssh`、`ls /boot/firmware/ || ls /boot/`（看有无 `ssh`/`userconf.txt`）。基线节的 `id pi` 探测命令已换成 `ls /home`，因为它只验证旧代际。
+- 无头启用 SSH 的官方机制（本文原先只写「Imager 勾选」，粒度不够）：`getting-started/setting-up.adoc` 的「Manual setup for SSH」要求 boot 分区**同时**放一个空的 `ssh` 与 `userconf.txt`（`<用户名>:<密码哈希>`，`openssl passwd -6` 生成）。只放 `ssh` 起来也没账户可登。系统内三条等价入口见 `configuration/interfaces.adoc`：`touch /boot/firmware/ssh` 后重启、Control Centre → Interfaces、`raspi-config` → `3 Interface Options → I1 SSH`。
+- 顺带补实的一条：boot 分区 `wpa_supplicant.conf` 失效原为推断，现取到 `setting-up.adoc` 原文「This functionality isn't available from Raspberry Pi OS *Bookworm* and onwards.」；`[待验证]` 只留给「本板是否已在 Bookworm 及之后」，不留给该行为本身。
+- 改动范围：仅 `docs/pi/rpi-network.md`（基线节重写为裁决版 + 时间锚点、ttyd unit 与说明的 `User=pi` → `User=<用户>`、`<用户>~/.ssh/...` 补空格、SSH 服务端节改写并补官方预置法、无头预置节补原文、仍需上板实测表补判据、与其他文档的分工加一条跨稿同步提示、状态加 V5 条目并把「按结果择一」改掉）。`docs/pi/rpi-ssh.md` 未动（qoder-b 认领），其示例用户名待编排会话同步。
+- 交付：`.ai/dispatch/qoder-a.md` 已 `git rm`，认领行已删。`sh scripts/check-agents.sh` 实跑「结论：合规」退出码 0。本轮零实测，无 `[待验证]` 升格。
