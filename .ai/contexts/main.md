@@ -22,6 +22,8 @@
 - 新增第 8 条断言（文档认领冲突）与 `AGENTS.md` 两条分工/认领约定；探针仓库六场景正反通过。首版按 worktree 副本覆盖主副本，把主 worktree 新写的认领吞成假合规，改为按「窗口+路径」去重后重验。
 - 派单改为 V1–V4「一窗口一文件」，内容是手册核对与实测清单编制，不再派跨文件合稿。
 - 派单通道换成仓库信箱（用户在三个方案里选「1」）：`.ai/dispatch/<标识>.md` 四份，头部 `- target:` / `- mode:`，正文写清开工第一步与交付动作；`AGENTS.md` 加两条约定，`check-agents.sh` 加第 9 条断言，`README.md` 入口加一行。断言在探针仓库六场景正反通过（在架 PASS、孤儿 FAIL、缺 target FAIL、目标被别窗认领 FAIL、自认领 PASS、空目录 INFO）。动机：MiniMax Code 无可编程消息入口，信箱把「传话」压成一句「开工」。
+- 回收 V1、V2（`22dd982`、`01b7e5b`，两窗口在建信箱之前就走会话通道交完了）：把 qoder-a、qoder-b 的 dispatch 改写为 V5（新镜像默认账户与 SSH 预置，官方文档裁决）与 V6（`rpi-ssh.md` 里不依赖板子的项在本机实测销账），信箱不空转。V1 的裁决结论进 `timeline.md`，`current.md` 的分歧清单相应减两条、增一条「手册也裁不了」（3B 是否默认启用 KMS）。
+- 一次 `sed -i` 把 `README.md` 的 CRLF 改成了 LF，导致整篇重写的假 diff；已复原为 CRLF，diff 收回 2 行。教训：改单行用 Edit，不用 sed 处理含行尾符差异的文件。
 
 ## 未决
 

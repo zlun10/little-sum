@@ -1,5 +1,12 @@
 # 任务时间线
 
+## 2026-10-15 — V1 手册核对：显示侧四条存疑裁了三条，nmcli DNS 分隔定案
+
+- 结论（`qoder-a`，`22dd982`，全部为文档核对、零新增实测）：① 裸 `hdmi` 键在 config.txt 与 Legacy config.txt 两页的键名列表里都不存在，`hdmi=0` 弃用——「禁用 HDMI」是 `hdmi_ignore_hotplug=1`，「无头当作接了屏」是 `hdmi_force_hotplug=1`，两需求方向相反，此前把它俩当同一需求的两种写法是错的。② `enable_tvout` 在 3B 上**默认即为 `1`**，源稿「3B 需显式开启且与 HDMI 硬件互斥」的机型判断相反；需要显式开启 `enable_tvout` 的是 Pi 4B/CM4 起的机型，3B 这代复合视频参数是 `sdtv_mode`/`sdtv_aspect`/`sdtv_disable_colourburst`。③ `gpu_mem` 默认 `76` 成立，但官方依据是「内存 <1 GB 为 64、≥1 GB 为 76」，是**按容量而非按机型**；官方另警告 VideoCore 架构下调高无收益、可能有害。④ 3B 是否默认启用 KMS（`vc4-kms-v3d`）**官方文档不按机型给默认值，手册层裁不了**，维持 `[待验证]`，判据改为上板三条：config.txt 里该 dtoverlay 是否被注释、`ls /dev/dri`、`journalctl -b | grep -i vc4`。
+- 决策：`nmcli ipv4.dns` 多值分隔裁决为**空格加引号**（依据 nmcli-examples(7) 官方示例 `ipv4.dns "8.8.8.8 8.8.4.4"`），逗号写法从命令中删除——nm-settings-nmcli(5) 只对 `ipv4.addresses` 明写「可用逗号分隔」，`ipv4.dns` 的属性描述只说 array、不给分隔符。附带纠正一条更容易踩的坑：`ipv4.addresses` 与 `ipv4.dns` 的分隔写法**并不统一**，不能相互照抄；板上回读断言保留。
+- 决策：官方发布页 raspberrypi.com/documentation 对本机返回 403 时，改用官方仓库 `raspberrypi/documentation` 的同源 `.adoc` / `.xml` 文件，并在文档里写明取用的具体文件路径。理由：博客与中文教程在键名与默认值上彼此矛盾，按约定只作线索，不能单独定案。
+- 连带影响：`rpi-network.md` 的「存疑项」一节改为「手册核对结论」＋「仍需上板实测」两节；下一步顺序里插入「先落实图形驱动路径」，因为它决定那批 `hdmi_*` 旧键在这台 3B 上到底生效与否。
+
 ## 2026-10-15 — 派单改走仓库信箱，跨工具窗口获得可控入口
 
 - 决策：派单从「编排会话在 Qoder 会话里口述任务」改为「仓库信箱」——编排会话在 `main` 写 `.ai/dispatch/<窗口标识>.md`（头部 `- target:`、`- mode:`，正文含开工第一步），worker 接到「开工/继续」这类最小指令后的第一个动作是 `git merge main` → 读自己那份 dispatch 并照做；交付 = 结论写进自身 context、删认领行、`git rm .ai/dispatch/<窗口标识>.md` 一并提交，**该文件还在就等于未交付**。
