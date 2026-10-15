@@ -8,6 +8,8 @@
 
 ## 派单（窗口合稿任务，开工前先 `git merge main`）
 
+- 派单状态（2026-10-15）：A1、A2 已由编排会话经 Qoder 会话通道下发（`qoder-a`、`qoder-b` 两个 worktree 的会话已接收）；B1、B2、C 属 MiniMax 工具窗口，无跨工具通道，需用户口头派单。产出回收方式：用户说「同步所有 tree」。
+
 - A1 `qoder-a`：以 `docs/pi/rpi-network.md` 为「Pi 侧」主干合稿，吸收 `rpi-display-headless.md` 全文与 `rpi-headless-access.md` 的 Pi 侧段落（config.txt/cmdline.txt、串口使能、镜像与账户基线）。
 - A2 `qoder-b`：以 `docs/pi/rpi-ssh.md` 为「电脑侧」主干合稿，吸收 `rpi-headless-access.md` 的电脑侧段落（PuTTY、WinSCP/scp、ttyd 视需要）。两稿按「端」分界，串口接线归 Pi 侧、终端参数归电脑侧。
 - B1 `minimax-b`：以 `docs/pi/rpi-gpio-pinout.md` 为「GPIO」主干，吸收 `rpi-gpio-control.md` 的库选型、CLI、C 路径与 SWD/CW32 章节（SWD 独立成章）。
