@@ -12,5 +12,6 @@
 - 文档落点由 `scripts/check-agents.sh` 第 7 条断言机检：文档只准放 `docs/`，仓库根只留四个入口文件
 - 协作与并行窗口约定：`AGENTS.md`
 - 跨会话现状与历史结论：`.ai/current.md`、`.ai/timeline.md`、`.ai/contexts/<窗口标识>.md`
+- 派单信箱：`.ai/dispatch/<窗口标识>.md`，worker 开工第一步读它并照做；文件还在 = 未交付（`AGENTS.md`「并行 Agent」）
 - 校验：`sh scripts/check-agents.sh`（违规退出码 1）
-- 同步所有 worktree：`sh scripts/sync-agents.sh`（主 worktree 运行，先收后放）
+- 同步所有 worktree：`sh scripts/sync-agents.sh`（主 worktree 运行，先收后放）

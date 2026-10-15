@@ -40,6 +40,8 @@
 - 编排会话的结论只写 `.ai/current.md` 与 `.ai/timeline.md`，不改他人 worktree 内的 context 内容；反向传递靠窗口 `git merge main`，同机共享对象库，无需 fetch 或 push。
 - 跨文件的一致性活（合稿、去重、分歧择一）由编排会话在 `main` 做，`docs/` 默认归它改——只有 main 同时看得见全部文档；派给窗口的活限于两类：实机验证（需要设备在场，产出实测清单与结论）和专章撰写（只写自己那一篇）。
 - 窗口动 `docs/` 下的文件前，在本窗口 `.ai/contexts/<窗口标识>.md` 写一行认领 `- 正在改：docs/pi/<文件名>.md`，同一时间只认领一个文件，收尾时删掉该行；两个窗口认领同一文件时 `scripts/check-agents.sh` 报 FAIL。
+- 派单走仓库信箱：编排会话在 `main` 写 `.ai/dispatch/<窗口标识>.md`，头部保留 `- target:` 与 `- mode:`，正文含开工第一步（`git merge main` → 写认领行 → 跑校验）。worker 接到「开工/继续」这类最小指令时，第一个动作就是读自己那份 dispatch 并照做——这对没有编程消息通道的工具窗口（MiniMax 侧）是唯一可控的派单入口。交付方式：worker 把结论写进自身 context、删掉认领行，并 `git rm .ai/dispatch/<窗口标识>.md` 一起提交；**该文件还在，就等于未交付**，编排会话据此判断回收范围。
+- `scripts/check-agents.sh` 第 9 条断言机检派单：`.ai/dispatch/*.md` 的文件名必须有同名 `.ai/contexts/<标识>.md`（防孤儿派单），且其 `target:` 不得与别的窗口的认领行冲突。
 - 窗口每次开始新任务前先 `git merge main`，保持约定与校验脚本最新。
 - 一个窗口同一时间只推进一个任务；不得用 `git stash`、`git checkout -- .`、`git reset --hard`、`git clean -fd` 处置其他窗口的改动。
 - 关闭窗口时才清理：确认任务已合入 `main` 后执行 `git worktree remove "../<窗口标识>-worktree"` 与 `git branch -d <窗口标识>`。

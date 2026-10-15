@@ -8,6 +8,7 @@
 #   6 .ai/contexts 下不得分层存放
 #   7 文档落点：仓库根只留四个入口文件，.ai/ 只留 current.md 与 timeline.md
 #   8 文档认领：context 里的「正在改：<路径>」不得被两个窗口同时声明
+#   9 派单信箱：.ai/dispatch/<标识>.md 须有同名 context，target 不得与别窗认领冲突
 # 主 worktree 运行时另列出各 linked worktree 中尚未归并的 context 文件（INFO，不判违规）。
 set -u
 
@@ -168,6 +169,36 @@ else
       report PASS "认领唯一: $path → $who"
     fi
   done < "$tmp_ctx"
+fi
+
+# 9 派单信箱：文件名须有同名 context；target 不得与其他窗口认领冲突；文件还在 = 未交付。
+if [ -d .ai/dispatch ]; then
+  empty=1
+  for f in .ai/dispatch/*.md; do
+    if [ ! -f "$f" ]; then continue; fi
+    empty=0
+    id=$(basename "$f" .md)
+    if [ ! -f ".ai/contexts/$id.md" ]; then
+      report FAIL "孤儿派单: .ai/dispatch/$id.md 无同名 context .ai/contexts/$id.md"
+      continue
+    fi
+    tgt=$(grep -m1 -E '^- target:' "$f" | sed -E 's/^- target:[[:space:]]*//')
+    if [ -z "$tgt" ]; then
+      report FAIL "派单缺 target 字段: .ai/dispatch/$id.md"
+      continue
+    fi
+    holder=$(awk -F'\t' -v p="$tgt" -v w="$id" '$1==p && $2!=w { print $2 }' "$tmp_claims" | sort -u | tr '\n' ' ')
+    if [ -n "$holder" ]; then
+      report FAIL "派单目标冲突: $id 要改 $tgt，但该文件已被 $holder 认领"
+    else
+      report PASS "派单在架: $id → $tgt"
+    fi
+  done
+  if [ "$empty" = 1 ]; then
+    printf 'INFO  .ai/dispatch 无待回收派单\n'
+  fi
+else
+  printf 'INFO  无 .ai/dispatch 目录\n'
 fi
 
 if [ "$fail" = 1 ]; then
