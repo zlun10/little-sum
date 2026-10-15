@@ -1,5 +1,16 @@
 # 任务时间线
 
+## 2026-10-15 — W1/W7 回收；跨稿裁定「异常退出后引脚状态」分两路；窗口自述哈希不可信
+
+- 结论：**本轮两份派单真实交付并合入**——`4ddd94d`（W1 `minimax-a`，新建 `docs/pi/rpi-gpio-robust.md`）、`771c216`（W7 `qoder-b`，`rpi-ssh.md` 本机 SSH 服务端实测），合并后 `main = cead594`，四分支 ff，`.ai/dispatch/` 再次消失，校验「合规」。信箱机制第二轮同样成立（minimax 侧仍需一句口头「开工」）。
+- 决策（跨稿裁定，编排会话独任）：**「程序异常退出后引脚保持上次电平」这句流传说法只对一半**。内核文档 `GPIO_V2_GET_LINE_IOCTL` 明写线的状态「guaranteed to remain as requested until the returned file descriptor is closed」，关闭后「uncontrolled… may revert to its default state」；进程被 kill 时 fd 由内核统一关闭，所以 **gpio-cdev 那条路（libgpiod / lgpio / gpiozero / `gpioset`）退回默认态（输入 + 默认上下拉，高阻被弱上拉顶着）**，而 **mmap `/dev/gpiomem` 直接改寄存器没有任何回收机制，崩溃后确实停在最后写入的电平**。`rpi-gpio-pinout.md`「十二、常见坑清单」第 3 条据此改写，专章两处「待编排会话」指针落地，`README.md` 与 GPIO 主干「相关文档」补入专章。**可执行的口径：`finally` 不是安全边界，负载默认关断必须做进硬件。**
+- 决策（W7，主机侧 `[本机实测]`，不升格为对 Pi 的验证）：`accept-new` 陌生主机 rc=0 且落盘、密钥变更 rc=255 拒绝；对照组 `no` 能连上但**静默关闭密码认证**；`ask` + `BatchMode` + 非 tty 是**立刻** rc=255 而非挂起。**远端命令自身 `exit 255` 与连接层失败同码 → 退出码单独不可判别，脚本必须用输出哨兵**。环境坑两条：Windows 保留 TCP 段 2170–2269 造成假的 `Connection refused`；`ssh ... | sed` 后读 `$?` 是管道末端的码。
+- 现场（判据固化）：**窗口自述的 commit 号不可信**。上一轮窗口侧声称的 `3885921` 与五个提交号在共享对象库里全部 `Not a valid object name`，本轮真实交付是另外两个哈希。回收前必做三条：`git worktree list`、`git cat-file -t <commit>`、`grep 正在改 .ai/contexts/`。同类不可复现报告：`minimax-b` 称 GPIO 第八节「含不存在的 `LEDPWM`/`PWMLED`」，本仓 grep 零命中。
+- 决策（不改写未经权威来源确认的 API 断言）：GPIO 主干第八节把 `lgpio.tx_pwm` 标为「硬件 PWM」，但 lgpio 上游文档本轮取不到（`abyz.me.uk` 抓取失败、仓库内 `lgpio.md` 404），该库另有带 `hardware_` 的 PWM 函数。**不猜、不改写**，只在原段落加 `[待验证]` 提示并列入专章存疑清单第 8 条（上板用示波器对比硬件 PWM 脚与其他脚的波形）。
+- 未决：手册层 + 本机层能销的账已销完，**剩余全部要板子**（KMS 默认值、本板镜像代际、针号逐针、`tx_pwm` 归属，以及 W1 存疑清单八条）。下一轮派单方向需用户先定。
+
+---
+
 ## 2026-10-15 — 项目目标与 CW32 脱钩；GPIO 篇删除 SWD 两节；发现窗口侧状态陈述与仓库不符
 
 - 决策：**本仓库与 CW32 无关，那条关联舍弃**（用户原话「和它没关系，舍弃」，在三个读法里选定「舍弃 CW32 这条关联」）。此前 `README.md` 从未把 CW32 写进目标（目标只有「树莓派 3B + 廉价 agent」两句），`current.md` 也只把它列为「未确认的痛点」——它是从我的历史记忆（用户主业是 CW32 固件工程师）带进来的前提，被当成了项目目标。**把旧记录推定的目标当作用户的目标，是本轮偏题的根因**。项目目标即 `README.md` 那两句：一台树莓派 3B + 全程廉价/免费 agent。

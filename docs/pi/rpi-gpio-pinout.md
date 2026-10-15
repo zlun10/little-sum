@@ -331,6 +331,8 @@ lgpio.tx_pwm(chip, 18, 0, 0)       # 停 PWM
 
 硬件 PWM 只支持固定几个引脚(Pi 3 上是 GPIO 12 / 13 / 18 / 19),其它引脚要用 `tb_pwm`(软件 PWM,由 CPU 忙等产生,精度和 CPU 占用都不如硬件 PWM)。
 
+> `[待验证]` 上面这段的 API 归属未经权威核对：lgpio 另有一个名字里带 `hardware_` 的 PWM 函数，`tx_pwm` 到底走硬件 PWM 单元还是 `gpioPwm` 那条通用通道，本轮拿不到 lgpio 上游文档（`abyz.me.uk` 抓取失败、仓库里的 `lgpio.md` 路径 404），**不下结论**。上板时按 [`rpi-gpio-robust.md`](./rpi-gpio-robust.md) 存疑清单第 8 条验：用示波器量 `tx_pwm` 在硬件 PWM 脚与非硬件脚上的实际波形，或直接读该库函数签名列表。
+
 **边沿检测 / 中断计数**
 
 ```python
@@ -585,7 +587,7 @@ close(fd);
 
 1. **物理针号当成 GPIO 号**——最常见,现象是"点 A 亮 B"。
 2. **新镜像没有 `RPi.GPIO`**,或老镜像没有 `lgpio`,先 `import` 试一次。
-3. **忘 `finally` 释放**——Python 异常退出后引脚保持上次状态,继电器可能一直吸合。
+3. **以为异常退出后引脚还停在你写的电平上**——分两路，别混：经 gpio-cdev 请求的线（libgpiod / lgpio / gpiozero / `gpioset`）在文件描述符关闭后由内核释放，线**退回默认态**（输入 + 默认上下拉，即高阻被弱上拉顶着），内核文档 `GPIO_V2_GET_LINE_IOCTL` 明写状态只保证「到 fd 关闭为止」；而直接 mmap 寄存器那条路（`RPi.GPIO`、本篇第十节的 mmap 方案）**没有任何回收机制**，崩溃后就真的保持最后写入的电平，继电器会一直吸合。`finally` 里释放仍然要写，但它不是安全边界——负载的默认关断必须由硬件保证。详见 [`rpi-gpio-robust.md`](./rpi-gpio-robust.md) 第二节。
 4. **5 V 直连 GPIO**——烧板子。
 5. **把 `gpio` 和 `gpioset` 当成同一个命令**——参数不兼容。
 6. **libgpiod 1.x / 2.x 抄错**——Buster / Bullseye 是 1.x,Bookworm 起是 2.x,函数名和参数类型都变了,先 `pkg-config --modversion libgpiod`。
@@ -607,3 +609,4 @@ close(fd);
 - `rpi-network.md` — Pi 侧主干：`config.txt` / `cmdline.txt` 路径与代际差异、串口使能、SSH 服务端、WiFi 与显示
 - `rpi-ssh.md` — 电脑侧主干：客户端与 `~/.ssh/config`、scp/WinSCP、PuTTY 与串口终端参数
 - `rpi-3b-hardware.md` — SoC 规格、功耗、`gpu_mem`、型号选型与上手清单
+- `rpi-gpio-robust.md` — GPIO 健壮写法专章：异常退出与上电默认态、占用冲突、去抖、libgpiod 1.x/2.x 错误处理、长驻程序失效模式、只读复核手段
