@@ -4,7 +4,7 @@
 
 适用机型：Raspberry Pi 3 Model B（BCM2837，40 针排针 J8）
 
-> 引脚表已与 Raspberry Pi 官方文档及 Pinout.xyz、Pi4J 等多个来源交叉核对。
+> 引脚表的**针号**来自多源交叉印证——官方 GPIO 文档只给 BCM 编号与功能，针号对照表在官方是一张图片；依据等级与逐条出处见第三节末「核对结论与出处」。
 > **网上关于 pin 1 朝向的描述互相矛盾**，请一律以"方形焊盘"为准，见第三节。
 > 全文**没有任何一条实机验证**：引脚与电气结论来自公开手册交叉核对，代码片段属通用行为。接板子前必须先过第二节与第十一节。
 
@@ -32,13 +32,17 @@ BCM2837 的所有数据引脚**绝对最大额定电压只有 3.3V**。把 5V �
 
 和 Arduino 不同：Arduino 是 5V 系统，可以直接互连；**树莓派和 Arduino 之间必须加电平转换**（双向 MOS 管模块或电阻分压）。
 
-**2. 每个 GPIO 输出最多约 16mA**
+**2. 每个 GPIO 的安全电流约 16mA，但默认驱动强度只有 8mA**
+
+官方口径：「All the electronics of the pads are designed for 16 mA. This is a safe value under which you will not damage the device.」16mA 是**最大驱动强度**下的安全值，不是推荐工作电流；默认驱动强度是 8mA，可在 2~16mA 之间分七档调整。
 
 够点亮 LED（必须串限流电阻 330Ω~1kΩ），但**不足以直接驱动电机、继电器、舵机**，这些要加三极管或 MOS 管驱动。
 
-**3. 3.3V 电源引脚（pin 1 / 17）合计只能带约 50mA**
+**3. 别高估 3.3V 供电能力，官方给的是每脚约 3mA**
 
-这是**上限**，不是余量，而且板载电路本身也要从这里取电。给舵机、LED 灯带供电是典型烧板方式 —— 不是电流不够导致读数偏低，是直接压垮稳压器。
+官方原话：3.3V 供电的设计值是**每个 GPIO 约 3mA**。若每脚都吃到 16mA，总电流会达到 272mA，**3.3V 供电会塌掉**；大电流尖峰还可能干扰 SD 卡、甚至影响 SDRAM 行为。
+
+⚠️ **pin 1 / 17 对外供电能带多少，官方文档没有给数字。** 流传的「约 50mA」属社区数据，本篇不背书。给舵机、LED 灯带供电请用独立电源并与 Pi 共地。
 
 **4. 5V 引脚（pin 2 / 4）就是 USB 输入电压本身**
 
@@ -59,6 +63,8 @@ BCM2837 的所有数据引脚**绝对最大额定电压只有 3.3V**。把 5V �
 ## 三、完整引脚表
 
 下表按**左奇右偶**排列，与板上排针的实际物理布局一致 —— 上下两两相邻的才是真正挨着的针脚：
+
+> **这张表的依据等级要说清楚**：官方 GPIO 文档给的是 **BCM 编号与功能**（硬件 PWM、SPI0/SPI1、I2C、串口用的 GPIO 号都写明），但**物理针号对照表在官方文档里是一张图片，没有文字版**。所以本表的针号来自 Pinout.xyz / Pi4J 等多源交叉印证，再用官方功能表反向校验自洽性。逐条结论见本节末「核对结论与出处」。
 
 | Pin | BCM | 功能 | Pin | BCM | 功能 |
 |---|---|---|---|---|---|
@@ -89,9 +95,41 @@ BCM2837 的所有数据引脚**绝对最大额定电压只有 3.3V**。把 5V �
 
 关于"USB/网口朝自己时 pin 1 在哪"，网上的说法自相矛盾（有的说靠近 SD 卡槽，有的说靠近 USB），**不要依赖任何方位描述**。丝印模糊或装在外壳里时，用方形焊盘，或用下面这个办法把 GND 找出来再按奇偶规律推。
 
-**万用表定位 GND**：万用表打连通档，黑表笔碰 USB 口的金属屏蔽（与系统地直连），红表笔逐个碰排针，**会响的就是 GND**：pin 6、9、14、20、25、30、34、39。找到 GND 后，其余引脚按奇偶排列规律就能推出来。
+**万用表定位 GND（实操经验，非官方方法）**：万用表打连通档，黑表笔碰 USB 口的金属屏蔽，红表笔逐个碰排针，**会响的就是 GND**：pin 6、9、14、20、25、30、34、39。找到 GND 后，其余引脚按奇偶规律就能推出来。
+
+⚠️ **这一条官方文档没有依据**，属社区经验：「USB 屏蔽壳与系统地直连」是通常做法，但取决于具体板子的屏蔽接地方式，不保证每块都通。**判据是「实测数出 8 个 GND」**——如果通断的针数不是 8，说明这个参考点不对，别硬套。第三节清单里的 GND 针号仍需上板复核。
 
 ⚠️ 别用板上的安装孔来找地，Pi 3 的安装孔到地平面不是可靠低阻通路，会误判。
+
+### 核对结论与出处（2026-10-15）
+
+派单要求核三组，逐条结论如下。**全部是文档核对，不是板上实测**——板子不在场，标「待上板复核」的仍需上板确认。
+
+依据分两级：**官方 GPIO 文档有明文** / **官方无文字表，靠多源交叉印证 + 算术自洽校验**。
+
+| # | 待核项 | 结论 | 依据等级 |
+| --- | --- | --- | --- |
+| 1 | pin 16 是否 GPIO23 | ✅ 是 GPIO23（原硬件篇写成 3V3，错） | 交叉印证 |
+| 2 | pin 18 是否 GPIO24 | ✅ 是 GPIO24（原写 GPIO10/SPI0 MOSI，错） | 交叉印证；且官方 `SPI0: MOSI (GPIO10)` 落在 pin 21，与本表自洽 |
+| 3 | SPI0 MOSI 是否在 pin 21 | ✅ 是，GPIO10 = pin 21 | **官方明文** |
+| 4 | pin 38 是否 GPIO20 | ✅ 是 GPIO20（原写 GND，错） | 交叉印证；官方 `SPI1: MOSI (GPIO20)` 佐证 |
+| 5 | GPIO 引出 28 个 | ✅ 成立 | 算术：40 − 4 电源 − 8 GND = 28；且这 28 个正好是 GPIO0–27 连续、无缺无重 |
+| 6 | ID_SD/ID_SC 保留，可用 26 | ✅ 成立 | **官方明文**：「GPIO pins 0 and 1 are present on the board (physical pins 27 and 28), but are reserved for advanced use」 |
+| 7 | GND 恰好 8 个 | ✅ 成立，针号为 6/9/14/20/25/30/34/39 | 算术 + 交叉印证。官方只说「a number of ground pins」，未给数量 |
+| 8 | 硬件 PWM 只有 GPIO12/13/18/19 | ✅ 成立 | **官方明文**：「Hardware PWM available on GPIO12, GPIO13, GPIO18, GPIO19」 |
+| 9 | GPIO25、GPIO5 的「PWM」标注是否误写 | **不成立——本篇从未这样标注**：第三节表里 pin 22 = GPIO25、pin 29 = GPIO5 都是纯 GPIO，官方 PWM 集合里也没有这两个号 | 官方明文 |
+| 10 | 第五节 PWM 行与第三节表是否自洽 | ✅ 自洽：pin12=GPIO18、pin32=GPIO12 归 PWM0；pin33=GPIO13、pin35=GPIO19 归 PWM1 | 本篇内部 |
+| 11 | `pinout` 属哪个包、要不要装 | 由 **gpiozero** 提供，**Raspberry Pi OS 默认已装**，不需额外安装 | **官方明文** |
+| 12 | 万用表找 GND 是否成立 | 技术上可行，但**官方无此方法**，「USB 屏蔽 = 系统地」属经验做法，判据应为实测数出 8 个 GND | 无官方依据，见本节 |
+
+**取用的官方源文件**（发布页对本机返回 403，改用官方仓库 `raspberrypi/documentation` 的 `master` 分支同源文件）：
+
+- `documentation/asciidoc/computers/raspberry-pi/gpio-on-raspberry-pi.adoc` —— GPIO 编号非顺序排列的说明、`pinout` 命令、备用功能表（硬件 PWM / SPI0 / SPI1 / I2C / 串口）、BCM2835/2836/2837 的电压规格表
+- `documentation/asciidoc/computers/raspberry-pi/gpio-pad-controls.adoc` —— 驱动强度档位、16mA 安全值、3.3V 供电每脚约 3mA 的警告
+
+**顺带修正的两处依据**：第二节的 16mA 与 3.3V 供电口径已按上述官方原文改写；原「3.3V 电源引脚合计约 50mA」在官方文档中查无依据，已删除。
+
+**仍需上板复核**：pin 16 / 18 / 38 的针号归属（官方无文字对照表）；GND 的 8 个具体针号；pin 3 / 5 固定上拉的阻值（官方只确认「有固定上拉」，未给数值）。
 
 ---
 
@@ -103,7 +141,9 @@ BCM2837 的所有数据引脚**绝对最大额定电压只有 3.3V**。把 5V �
 - **BOARD**（如 pin 11）= 物理位置编号，接线查表用这个
 - **WiringPi**（如 29）= 老库 `wiringPi` 的第三套编号，与前两套数值都对不上，该库已废弃，只可能在外设定义文件（`.py` 里的 `wpi_pin`）中见到
 
-对照：物理 pin 11 = BCM GPIO17，物理针号与 GPIO 号之间**没有规律可推**，记不住就查第三节的表或板上的 `pinout` 命令。
+对照：物理 pin 11 = BCM GPIO17。官方文档也明说「The GPIO pin numbering scheme is not in numerical order」，**物理针号与 GPIO 号之间没有规律可推**，记不住就查第三节的表，或在机器上直接跑 `pinout`。
+
+> `pinout` 由 **gpiozero 库**提供，官方原话是「This tool is provided by the GPIO Zero Python library, which is **installed by default** in Raspberry Pi OS」——默认已装，不用另外安装。
 
 写代码时必须**显式声明**用的哪套：
 
@@ -124,13 +164,13 @@ GPIO.setmode(GPIO.BCM)      # 之后 GPIO.output(17, ...)
 | **I2C1** | 3 (SDA)、5 (SCL) | 最多 127 个设备，只需 2 根数据线。首选 |
 | **SPI0** | 19 MISO、21 MOSI、23 SCLK、24 CE0、26 CE1 | 速度高于 I2C，需要 4~5 根线 |
 | **UART0** | 8 TXD、10 RXD | 串口，见第六节的坑 |
-| **PWM** | 12（GPIO18）、32（GPIO12）→ PWM0<br>33（GPIO13）、35（GPIO19）→ PWM1 | 硬件 PWM 无抖动 |
+| **PWM** | 12（GPIO18）、32（GPIO12）→ PWM0<br>33（GPIO13）、35（GPIO19）→ PWM1 | 硬件 PWM 无抖动，官方明确只有这 4 个 GPIO |
 
 ⚠️ **引脚是复用的**：GPIO19（pin 35）同时是 SPI1 的 MISO，GPIO12（pin 32）同时是 PCM/I2S 音频。用 PWM 就别再用 SPI1，用 SPI1 就别占用 pin 35。
 
 **I2C 的两个注意点**：
 
-- pin 3 / 5 板载已有 **1.8kΩ 上拉**到 3.3V。外接 5V 器件时它的上拉会把 3.3V 轨往上拉，要切断模块上的上拉跳线或加电平转换。
+- pin 3 / 5 板载已有上拉到 3.3V，官方原文是「Pins GPIO2 and GPIO3 have **fixed** pull-up resistors」——是**固定**的，软件改不了（其他脚的软件可配置上拉是 50~65kΩ，量级完全不同）。⚠️ 官方**未给这个固定上拉的阻值**，正文沿用的 1.8kΩ 属社区数据。外接 5V 器件时它会把 3.3V 轨往上拉，要切断模块上的上拉跳线或加电平转换。
 - 启用：`sudo raspi-config` → Interface Options → I2C → 启用（总线号是 **1**，不是 0）
 - 扫描设备：`i2cdetect -y 1`
 
@@ -684,7 +724,10 @@ $2 = 0x0000
 
 ## 参考
 
-- GPIO 官方文档:raspberrypi.com/documentation/raspberry-pi/hardware/raspberry-pi.html
+- GPIO 官方文档:raspberrypi.com/documentation/computers/raspberry-pi.html#gpio
+- GPIO 官方源文件（发布页对本机 403 时的同源替代，仓库 `raspberrypi/documentation` 的 `master` 分支）：
+  - `documentation/asciidoc/computers/raspberry-pi/gpio-on-raspberry-pi.adoc` —— 编号说明、`pinout`、备用功能表（硬件 PWM / SPI / I2C / 串口）、BCM2835/2836/2837 电压规格
+  - `documentation/asciidoc/computers/raspberry-pi/gpio-pad-controls.adoc` —— 驱动强度档位、16mA 安全值、3.3V 供电每脚约 3mA 的警告
 - `lgpio` 库:github.com/gpiozero/lgpio
 - `libgpiod` C 库:kernel.org/doc/html/latest/gpio/libgpiod.html
 - OpenOCD 手册:openocd.org/documentation/
