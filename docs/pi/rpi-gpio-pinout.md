@@ -6,7 +6,8 @@
 
 > 引脚表的**针号**来自多源交叉印证——官方 GPIO 文档只给 BCM 编号与功能，针号对照表在官方是一张图片；依据等级与逐条出处见第三节末「核对结论与出处」。
 > **网上关于 pin 1 朝向的描述互相矛盾**，请一律以"方形焊盘"为准，见第三节。
-> 全文**没有任何一条实机验证**：引脚与电气结论来自公开手册交叉核对，代码片段属通用行为。接板子前必须先过第二节与第十一节。
+> 全文除第九、第十、第十二节标注 `[板上实测]` 的条目外，**没有任何一条实机验证**：引脚与电气结论来自公开手册交叉核对，代码片段属通用行为。接板子前必须先过第二节与第十一节。
+> `[板上实测]` 2026-10-19 首轮在这块 3B（Raspbian 13 trixie、内核 `6.12.47+rpt-rpi-v7`，经 SSH 只读探针，未接任何负载）上跑过，改写了三处：**libgpiod 是 2.2.1，本篇原来的命令行形态跑不通**（第九节）、**这块板的 chip 编号分布与常见写法不同**（第九、十节）、**sysfs 那条老办法要用全局编号**（第十节）。凡 `[板上实测]` 都带命令与实际输出。
 
 ---
 
@@ -77,8 +78,8 @@ BCM2837 的所有数据引脚**绝对最大额定电压只有 3.3V**。把 5V �
 | 13 | 27 | GPIO27 | 14 | — | GND |
 | 15 | 22 | GPIO22 | 16 | 23 | GPIO23 |
 | 17 | — | 3.3V | 18 | 24 | GPIO24 |
-| 19 | 9 | SPI0 MISO | 20 | — | GND |
-| 21 | 10 | SPI0 MOSI | 22 | 25 | GPIO25 |
+| 19 | 10 | SPI0 MOSI | 20 | — | GND |
+| 21 | 9 | SPI0 MISO | 22 | 25 | GPIO25 |
 | 23 | 11 | SPI0 SCLK | 24 | 8 | SPI0 CE0 |
 | 25 | — | GND | 26 | 7 | SPI0 CE1 |
 | 27 | 0 | ID_SD（保留） | 28 | 1 | ID_SC（保留） |
@@ -383,6 +384,25 @@ gpioset 0 17=1         # chip0 的 17 号置 1
 gpioget 0 17
 ```
 
+`[板上实测]` 2026-10-19 这块板上是 **libgpiod 2.2.1**（`gpioset --version` / `gpioget --version`），上面那两行**跑不通**——2.x 的位置参数只接「线」，chip 要用 `-c` 给：
+
+```bash
+gpioget -c gpiochip0 17          # → "17"=inactive   （rc=0）
+gpioset -c gpiochip0 17=1        # 写法由 --help 的 Usage 行确认，本轮未真写（板上没接负载，别为了验证去写）
+```
+
+按 1.x 形态写的报错文本两条，都容易误读成「引脚不存在」：`gpioget 0 17` → `gpioget: cannot find line '0'`（把 `0` 当成了线**名**），`gpioget gpiochip0 17` → `cannot find line 'gpiochip0'` + `cannot find line '17'`（**两个位置参数都被当线名**，chip 根本没被认）。判别口诀：**报 `cannot find line` 就是 chip 没给对**，不是编号错、也不是权限错。
+
+`[板上实测]` 本板 `gpiodetect` 与 `/dev` 的对应关系（写脚本时的唯一可靠依据，别照抄别处的 `gpiochip0`）：
+
+```
+gpiochip0 [pinctrl-bcm2835] (54 lines)        ← 40 针排针主控制器
+gpiochip1 [brcmvirt-gpio] (2 lines)
+gpiochip2 [raspberrypi-exp-gpio] (8 lines)
+```
+
+`ls /dev/gpiochip*` 另有 `/dev/gpiochip4`，它是**指向 `gpiochip0` 的符号链接**（`lrwxrwxrwx ... gpiochip4 -> gpiochip0`），`gpiodetect` 里不出现。看到 4 个设备节点只有 3 个 chip 不是异常。
+
 注意区分:`gpio` 命令属于老 `wiringPi`,`gpioset` / `gpioget` 才是 `libgpiod`,两者参数不通用。
 
 ---
@@ -542,6 +562,23 @@ close(fd);
 ```
 
 接口在上游内核已废弃,是否还在取决于 `CONFIG_GPIO_CDEV` 和内核配置,Raspberry Pi OS 新镜像上可能整个 `/sys/class/gpio` 都不存在。先 `ls /sys/class/gpio` 确认,没有就用 libgpiod。
+
+`[板上实测]` 2026-10-19 这块板（Raspbian 13 trixie / `6.12.47+rpt-rpi-v7`）上 **sysfs 整条路径是「在，但编号不是 BCM 号」**，上面那段代码在本板直接用不了：
+
+```
+ls /sys/class/gpio        → export  unexport  gpiochip512  gpiochip566  gpiochip568
+echo 17 > /sys/class/gpio/export                    → rc=1, bash: write error: Invalid argument
+                                                     dmesg: export_store: invalid GPIO 17
+echo 529 > /sys/class/gpio/export                   → 成功，direction=in、value=0
+echo 529 > /sys/class/gpio/unexport                 → rc=0
+cat /sys/class/gpio/gpiochip512/{label,base,ngpio}  → pinctrl-bcm2835 / 512 / 54
+```
+
+读法：**sysfs 用的是全局 GPIO 编号 = `base` + BCM 号**。本板主控制器的 `base` 是 **512**（不是很多教程假设的 0），所以 BCM17 要写 `529`；`/sys/class/gpio` 下也**没有 `gpiochip0`**，那三个 `gpiochip512/566/568` 与第九节 `/dev/gpiochip0/1/2` 是**同一批 chip 的两套编号**（512=pinctrl-bcm2835、566=brcmvirt-gpio、568=raspberrypi-exp-gpio），别把 `512` 当成 libgpiod 的 chip 参数。上面 `export` 的两条已 `unexport` 清干净，`ls` 复查回到只有三个 `gpiochip*`。
+
+三条后果：① 本篇任何 `echo <BCM号> > export` 与 `/sys/class/gpio/gpio<BCM号>/...` 的写法在本板**都要先加 512**，而 `base` 是内核动态分配的，**换内核/换镜像可能整体变**，所以这条路连「可移植的常数」都算不上；② `/dev/gpiochip0` 存在（gpio-cdev 是开的），libgpiod / lgpio / gpiozero 都正常，**没有理由用 sysfs**；③ 想复核自己的编号，唯一稳妥的是 `gpiodetect` + `gpioinfo -c gpiochip0`，而不是照抄任何文档里的数字。
+
+`[板上实测]` 同轮顺手确认的三个库都在（都只 `import`，没碰引脚）：`RPi.GPIO` **装着**且自报 `{'TYPE': 'Pi 3 Model B', 'PROCESSOR': 'BCM2837', 'RAM': '1GB', 'REVISION': 'a02082'}`（第十二节第 2 条「新镜像没有 `RPi.GPIO`」在本板不成立）、`lgpio` 模块可导入（但 `lgpio_version()` 这类函数名与文档写法不一致，具体 API 仍属未验）、`gpiozero` 在 `/usr/lib/python3/dist-packages/`。`pinout` 命令是否存在本轮未跑。
 
 ### 换 C 能不能更快
 

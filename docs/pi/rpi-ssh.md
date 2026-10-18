@@ -8,10 +8,14 @@
 
 - `[本机实测]` = 2026-10-15 在这台电脑上实跑得到，与 Pi 无关，可信。含 W7 起在**本机自建测试服务端**（WSL 内 sshd，只监听回环）上跑的结果——它与 Pi 无关，但要注意它是「Linux + OpenSSH 语义」，替不了 Pi 的设备属性（哪些结论属这类，第十二节列了）。
 - `[待对端实测]` = 需要 Pi 在场才能判定，含从 `rpi-headless-access.md` 吸收来的段落（原稿未标证据，一律不升格）。
-- `[对端实测]` = Pi 在场实跑得到，须同时记日期与用的哪个客户端。当前**尚无一条**，回填时不要写成 `[本机实测]`——后者的定义就是「与 Pi 无关」，混用会把端别记错。
+- `[对端实测]` = Pi 在场实跑得到，须同时记日期与用的哪个客户端。2026-10-19 起本稿有了第一批（第九次变更记录，接入轮首轮），用的客户端是 msys `OpenSSH_9.9p1`（Git Bash 那套），Windows 自带 `9.5p2` 侧**未重跑**。回填时不要写成 `[本机实测]`——后者的定义就是「与 Pi 无关」，混用会把端别记错。
 - `[分歧未裁决]` = 本仓多篇文档互相矛盾且无权威依据，**只并列双方立场，不择一**（见第十一节）。
 
-全文**没有任何一条对 Pi 的实测**。V6 把不依赖板子的项在本机跑掉，W7 又装了本机测试服务端、把「只需一次真密钥交换」的那批也跑掉，两处都改标 `[本机实测]`（各条自带命令与实际输出）；剩下的 `[待对端实测]` 全是那台设备的属性。逐项考法见 `.ai/contexts/qoder-b.md` 的「电脑侧实测清单」小节。
+全文**曾经没有任何一条对 Pi 的实测**；2026-10-19 起有一批（见上一段），数量仍少，且集中在「接入是否成立」这一层。**除那批标注之外，本文其余条目的证据等级不变**：V6 把不依赖板子的项在本机跑掉，W7 又装了本机测试服务端、把「只需一次真密钥交换」的那批也跑掉，两处都改标 `[本机实测]`（各条自带命令与实际输出）；剩下的 `[待对端实测]` 全是那台设备的属性。逐项考法见 `.ai/contexts/qoder-b.md` 的「电脑侧实测清单」小节。
+
+**2026-10-19 起本稿有了第一批 `[对端实测]`**（3B 上电、接同一局域网，首轮全部用 Git Bash 的 msys `OpenSSH_9.9p1`，未换客户端）：接入跑通到免密，`[待对端实测]` 里「递钥/判真在对端是否成立」已销，「sshd 权限严格模式静默拒钥」被**排除为本轮原因**（仍未观察到被权限拒的真实案例，条目保留）。落点分散在各节：第一节两张现状表、第三节的档位副作用、第四节的主机键基准与指纹比对口径、第五节新增的「对端首轮实录」（公钥内容鉴别与逐连接调试实例，本轮真正的收获）、第六节首条、第十节可达性一行。**一条未擅自升格**：PATH 三条对比、Pi 账户的登录 shell、tmux 装没装、rsync、scp `-r`、mDNS、串口认口全部仍未验；镜像代际与 `sshd` 是否 enabled 属 Pi 侧稿，实测记在 `rpi-network.md`「首轮板上基线」，本文只引用不重复。
+
+**敏感内容规则（本轮确立，回填实测时照它办）**：口令、私钥、`authorized_keys` 里的公钥正文、账户名与主机名一律不写进仓库——文档里继续用 `<用户>`/`<addr>` 占位，实际值只活在 `~/.ssh/config` 与本窗口 context。主机键指纹是**公开材料、不是凭据**，且是指纹比对唯一的可核对基准，因此写进第四节。
 
 ## 一、电脑侧现状（本机实测）
 
@@ -25,15 +29,16 @@
 | 默认密钥轮询列表 | `[本机实测]` 两者不同：9.9p1 无 `id_dsa`，9.5p2 有。结论：不靠默认轮询，`IdentityFile` + `IdentitiesOnly yes` 显式锁定。 |
 | 无配置时的解析 | `[本机实测]` `ssh -G <任意名>` 显示 `user zheng`、`port 22`、`batchmode no`、`stricthostkeychecking ask`。两个后果：不写 `User` 就拿 Windows 用户名去登录（表现为认证失败）；`ask` 在 agent 的非交互调用下是死路——`[本机实测]` W7 用本机服务端跑过：`ask` + `BatchMode=yes` + stdin 非 tty 连陌生主机 → rc=255、`Host key verification failed.`，known_hosts 连文件都不创建（**不是挂起，是立即失败**；挂起只在 stdin 是 tty 时发生，未造该场景）。这就是「人工能连、agent 连不上」的根因。Pi 侧账户基线已由 V5 按官方文档裁决：**当前镜像不预置 `pi`，用户名由装机时设定**（见 `rpi-network.md`「镜像与默认账户基线」），所以 `User` 一行必填，且若装机时恰好填了 `zheng`，不写 `User` 反而会「碰巧对」——本文一律显式写 `User`，不依赖这种巧合。 |
 | 连接失败的退出码 | `[本机实测]` 域名解析失败、端口无监听两种场景下，两客户端均返回 **255**；W7 补上另一侧：远端命令自身 `exit 255` 也返回 **255**，与连接层失败**同码**（见第六节），所以仅凭退出码不可判别。 |
-| `~/.ssh/config` | `[本机实测]` 不存在，别名待建。 |
+| `~/.ssh/config` | `[对端实测]` 2026-10-19 已建且生效：`Host pi` 单块，含 `HostName`/`User`/`IdentityFile`/`IdentitiesOnly`/`BatchMode yes`/`StrictHostKeyChecking accept-new`，`ssh -G pi` 复核落值正确（此前 `[本机实测]` 记为「不存在，别名待建」，已过时）。**踩到一条本稿没写过的连带后果**：`BatchMode yes` 把密码认证一起拒了，所以在钥装好之前，`ssh pi` 走不通任何认证，连人工输密码都不给提示（`Permission denied (publickey,password)` 立即返回）。递钥那一次必须绕过别名写全 `<用户>@<addr>`，或临时加 `-oBatchMode=no`（命令行 `-o` 优先于 config，实测可用）。 |
 | 密钥 | `[本机实测]` `~/.ssh/id_ed25519` 已存在且**无口令**（`ssh-keygen -y -P ''` 直接成功），不需要新生成。 |
 | ssh-agent | `[本机实测]` 服务 `StartType=Disabled`。密钥无口令，保持 Disabled，不引入 agent 依赖。 |
-| known_hosts | `[本机实测]` 4 条历史条目，无 Pi。 |
+| known_hosts | `[对端实测]` 2026-10-19 首次连接由 `accept-new` 静默落盘，条目键是**裸地址**（默认 22 端口，无方括号），ED25519 指纹与板子自报的私钥指纹一致，比对法见第四节。（此前 `[本机实测]` 记为「4 条历史条目，无 Pi」，已过时。） |
 | 端口探测工具 | `[本机实测]` Git Bash 的 `/dev/tcp` 可用（实测连上 127.0.0.1:135）；PowerShell 有 `Test-NetConnection`。探测不依赖认证、不需安装。 |
 | PuTTY | `[本机实测]` **未安装**（PATH 与 `plink` 均无）。要用串口终端需先安装，属未决依赖（第十一节）。 |
 | WinSCP | `[本机实测]` **未安装**（PATH 与两个 Program Files 标准路径均无）。 |
 | 串口现状 | `[本机实测]` 本机已有 `COM3`、`COM19`、`COM22` 三个串口节点。接 USB-TTL 后新增的那一个才是目标口，**不能凭现存的号猜**。 |
 | mDNS | `[本机实测]` Bonjour 服务未安装；`Resolve-DnsName raspberrypi.local` 返回「DNS 名称不存在」。当前网络里没有 Pi，此结果**不能判定**本机 mDNS 能否解析 `.local`，判据见第三节。 |
+| 对端首轮基线 | `[对端实测]` 2026-10-19，`ssh <别名> 'grep -s "^PRETTY_NAME" /etc/os-release; uname -r; systemctl is-enabled ssh'` 取回：`Raspbian GNU/Linux 13 (trixie)`、内核 `6.12.47+rpt-rpi-v7`（32 位 v7，与 3B 相符）、sshd `enabled`；服务端自报版本 `OpenSSH_10.0, OpenSSL 3.5.4`（本端 msys 是 `9.9p1`，跨了大版本）。**本轮在对端跑到的每一条都与 W7 本机服务端的结论一致**（`accept-new` 静默落盘且键为裸地址、`PasswordAuthentication=no` 的文本就是 `Permission denied (publickey,password)`、公钥走管道追加成立），没有需要按对端改写的 OpenSSH 语义。日志侧一条实测：`/var/log/auth.log` **读不到**（`tail` 报 `cannot open`），Raspbian 13 的认证记录只在 journald——但本轮定因没走 `journalctl`，走的是逐连接调试实例（第四节），这条只到「该路径不可用」。 |
 
 ## 二、接入形态（按电脑侧工具选，不按对端能力）
 
@@ -110,6 +115,8 @@ ssh -F <cfg> -o BatchMode=yes pi 'echo __DONE__'
 
 判定：两输出逐行一致，且 `user` 是 Pi 的用户而非 `zheng`。
 
+`[对端实测]` 2026-10-19 首轮接入用的就是这份 config（`HostName`/`User` 填实际值，本文不写），`ssh -G pi` 复核落值正确，之后所有调用命令行只出现 `ssh pi`。踩到的唯一 config 层问题不是解析而是**档位副作用**：`BatchMode yes` 使递钥之前那次「人工输密码」根本没有提示，`ssh pi` 立即 `Permission denied (publickey,password)`——看着像认证配错，实际是自己在拒。两条出路实测可用：那一次不写别名而写 `<用户>@<addr>`，或加 `-oBatchMode=no`（命令行 `-o` 优先于 config）。**但这只是绕过，不是解决**：`PasswordAuthentication` 在服务端仍开着时，人工路径才会给提示，见第五节。
+
 ## 四、认脸与端口探测
 
 先用**不依赖认证**的手段确认 22 在听，避免把「通道」与「授权」的错混为一谈（`ssh pi 'echo ok'` 本身要登录成功，无法区分这两层）：
@@ -126,6 +133,20 @@ Test-NetConnection <addr> -Port 22                    # PowerShell
 `[本机实测]` 探测结果的读法有个坑，W7 撞上：Windows 有一批 TCP **保留端口段**（`netsh int ipv4 show excludedportrange protocol=tcp` 可查，本机覆盖 2170–2269 等多段），落在段内时本机 `127.0.0.1:<port>` 的连接**必为 `Connection refused`，与对端是否在听无关**——本机测试服务端最初绑 2200 就是被这条假象挡住，换 22002 才通。所以「refused」有两种成因：对端没监听，或端口在本机被保留。查 `<addr>` 的实际端口不受此影响（保留段只作用于本机回环的转发），但**排查顺序**上先确认端口不在保留段，可以省掉一轮误判。
 
 `[本机实测]` 认脸的行为层（陌生主机落盘、已变化主机拒绝、`no` 放行且降级认证）已在第三节给出，用的是本机服务端；换到 Pi 上不需要重测**语义**，只需按第四节的键形式复核条目：非默认端口下 known_hosts 的键写作 `[地址]:端口`，默认 22 则是裸地址，`ssh-keygen -R` 删的对象随之不同。
+
+`[对端实测]` 2026-10-19 对端首次连接的落盘形态与本机结论一致，只补两个「只有真板子能给」的事实：
+
+- 默认 22 端口下条目键确实是**裸地址**（无方括号、无 `用户@` 前缀），且 `accept-new` 一次连接就落**三种**键（ED25519 / RSA / ECDSA），不是只存协商用的那一把。所以 `ssh-keygen -R <addr>` 一次删掉的是三行，删完重连会重新落三行——别把多出来的两条当异常。
+- **指纹基准**（公开材料，可入文档；换卡或重新生成主机键后此值失效，它是「本次比对的基准」而不是长期信任锚）：`SHA256:5uZtds9fhNW0uKN/SYNOwBQFNQHgSc6+3XpJy5zzjDI`（ED25519）。
+
+比对口径 `[对端实测]`：不要只信客户端落的条目，去对端取**私钥自报**的指纹再比——
+
+```sh
+ssh pi 'ssh-keygen -l -f /etc/ssh/ssh_host_ed25519_key.pub'    # 对端自报
+ssh-keygen -lf ~/.ssh/known_hosts | grep <addr>                # 本机所存
+```
+
+首轮两串逐字符相同（RSA、ECDSA 也各自相同），说明 `accept-new` 静默落盘期间没被中间任何设备替换。`[本机实测]` 提醒一处读法：`ssh-keygen -lf` 对**整个 known_hosts 文件**跑会列出所有主机的所有条目，务必 `grep` 目标地址，否则会把别台的指纹当作板子的。
 
 `[待对端实测]` 换过 SD 卡或同一 IP 换了别的板子时报 `WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!`，处置是 `ssh-keygen -R <别名或实际键>` 后重新核对指纹，不是关掉检查。注意 `ssh-keygen -R` 删的是**条目键**：曾用 `pi@IP` 连过又改用别名，旧条目不会自动失效，需按当时实际的键各删一次。这条告警的**触发与拒绝**本身已由本机服务端实测（第三节），Pi 上要验的只是「同一 IP 真换了另一把密钥」这个场景会不会自然发生。
 
@@ -147,6 +168,20 @@ Get-Content $env:USERPROFILE\.ssh\id_ed25519.pub | ssh pi "mkdir -p ~/.ssh && ca
 
 两条的**执行机制** `[本机实测]`（W7，本机服务端）：命令本身跑通，公钥落进 `~/.ssh/authorized_keys` 后免密登录成立，`namei -l ~/.ssh/authorized_keys` 显示 `drwx------ anwen .ssh` 与 `-rw------- authorized_keys`（家目录本身是 `drwxr-x---`，即 `0750`），即 Git Bash 版那条一次性把权限做对了。两条实测细节：① 该命令**不幂等**，重复执行会把同一把公钥追加成两行（1 行 → 2 行）且不报错，多跑几次只是文件变长，不影响登录，但排查时别把重复行当异常；② 真正的对端差异只剩「sshd 的权限严格模式会不会因目录/家目录组可写而静默拒钥」，属 `[待对端实测]`（本机这台的权限本来就对，测不出被拒的样子）。**别名要与第四节实际使用的一致**：用 `<user>@<addr>` 递一次、用 `pi` 连一次，known_hosts 里会是两个不同键的条目，指纹告警的判读会错位。
 
+### 对端首轮实录：钥「递上了」仍被拒，只有指纹能鉴别内容
+
+`[对端实测]` 2026-10-19 首轮的真实失败形态：公钥确实进了 `authorized_keys`（`wc -l` 显示 1 行），`ssh -v` 显示客户端**正确 Offer** 了那把钥（指纹与服务端日志里的完全同一串），服务端却直接 `Failed publickey`。定因过程给出三条本稿原先没有、且**只看命令输出永远想不到**的结论：
+
+1. **`ed25519` 公钥行是定长的**（本例整行 99 字节）。所以 `wc -l`、`wc -c`、乃至「长度看着一样」对内容**零判别力**——那行被手打错两个字符时，字节数与列宽完全不变。鉴别只认两种：`ssh-keygen -lf ~/.ssh/authorized_keys` 出**指纹**（对端那把的指纹与客户端 `ssh-keygen -lf ~/.ssh/id_ed25519.pub` 不同 ⇒ 不是同一把），或 `cat -A` 把整行打出来逐字符比。**副作用**：`ssh-keygen -lf` 在整文件都不是公钥格式时报 `<文件> is not a public key file.`——这句报错本身就是格式损坏探测器，值得当作第一条判据用。
+2. **逐连接调试实例是这类问题的唯一确定工具**。普通 `ssh -v` 只能证明「客户端递了、服务端拒了」，说不出拒在哪一步；对端起一个单连接调试实例把服务端侧摊开：
+   ```sh
+   ssh -t <用户>@<addr> "sudo /usr/sbin/sshd -d -p 2222"   # 另开窗口，再发起一次连接
+   ```
+   三条实测细节：① **必须写绝对路径**，`sudo sshd -d` 直接报 `sshd requires execution with an absolute path`；② `-d` 实例**服务一条连接就退出**，所以每次要看的那次连接必须新起一个实例；③ 调试实例读的是**它自己的默认配置**，与 `0.0.0.0:22` 那个正式实例互不影响，端口换成 2222 就不会和正式实例抢。本例日志给出的关键行是 `trying public key file /home/<用户>/.ssh/authorized_keys` 紧接 `Failed publickey for <用户>`——**文件被读到、没有权限告警**，据此把「StrictModes 静默拒钥」从本轮嫌疑里排除（该情形本板仍未真正观察到，条目保持 `[待对端实测]`），矛头只剩内容不一致。
+3. **管道 + 相对路径会把对端文件清空**。修的那次写成 `cat .ssh/id_ed25519.pub | ssh -oBatchMode=no pi 'cat>.ssh/authorized_keys'`，人在 `~/Desktop` 下 ⇒ 本地 `cat` 报 `No such file or directory`，管道是**空的**，而对端的 `cat>` 已经开始写：再输一次密码就把 `authorized_keys` 覆盖成 0 字节，把「一把坏钥」升级成「零把钥」。用 `>` 覆盖对端凭据文件前必须满足两条：本地文件路径写成 `~/.ssh/...` 这种**任何 cwd 都对**的形式，且**先确认本地 `cat` 成功**再让远端开始覆盖——更稳的顺序是覆盖前先备份（`cp ~/.ssh/authorized_keys ~/.ssh/ak.bak`）。`[对端实测]` 用绝对写法重跑后免密立即成立。
+
+`[本机实测]` 与本轮相关的一条 Windows 侧坑（Git Bash 特有，会打断上面第 2 步）：**裸 `sudo` 在 Git Bash 里被 Windows 自带的 sudo 功能截走**，输出是「已在此计算机上禁用 Sudo，请在开发者设置中启用」而不是板子的密码提示——命令根本没出本机。走 `ssh <用户>@<addr> "sudo …"`（让远端 shell 去执行 `sudo`）不受影响。另：把 `C:\Users\…` 这样的反斜杠路径当参数传给 `powershell.exe` 时，msys 会把反斜杠吃掉（`C:Userszheng…`），一律写正斜杠。
+
 **判定真通过**（本文最重要的验证技巧）：
 
 ```sh
@@ -160,6 +195,8 @@ ssh -o PasswordAuthentication=no pi 'echo ok'
 - 假通过的路径被复现：同一台去掉 `-o PasswordAuthentication=no`、只留 stdin 非 tty，客户端**回退到密码认证**并连吃 `Permission denied, please try again.` 两次再失败——人坐在 tty 前就是在这里把密码输对而登进去的。
 - 由此补一条：`BatchMode yes` 单独也能挡住这条回退（只留 BatchMode、不加 `PasswordAuthentication=no` 时同样 rc=255），两者是**两道独立的闸**，config 里都留着。判真只认第一种命令的输出，不认「能登进去」。
 
+`[对端实测]` 2026-10-19 在真对端复现了**正例**：`ssh -o PasswordAuthentication=no <别名> 'echo AUTH-OK; …'` → rc=0 且首行输出 `AUTH-OK`，同一条命令里顺带取回对端基线（见第一节「对端首轮基线」行）。反例（`authorized_keys` 为空时被拒）本轮没在 Pi 上重造，但**不必重造**——W7 已在本机服务端跑过正反两面，本轮的对端结果与本机结论逐条一致，这本身就是「Linux + OpenSSH 语义可替 Pi 回答认脸/退出码类问题」这条判断的验证。
+
 由此得出一条电脑侧操作顺序（从 `rpi-headless-access.md` 的锁死警告吸收并具体化）：**对端关闭密码登录必须晚于本条判真通过**。否则唯一退路是串口，而串口需要 PuTTY 与接线都就绪——`[本机实测]` PuTTY 当前未安装。
 
 首次登录用什么账户/密码：`[分歧未裁决]`（见第十一节），本文不写死，也不影响上面这条顺序。
@@ -167,6 +204,8 @@ ssh -o PasswordAuthentication=no pi 'echo ok'
 ## 六、调用契约
 
 形态：`ssh pi '<cmd>'`，选项已由 config 承载。
+
+`[对端实测]` 2026-10-19 免密建立后，这一形态在本板直接可用，无需任何额外选项：一条命令里连跑 `date; uptime -p; ls /sys/class/gpio` 取回三段输出（对端时间 `Mon 19 Oct 00:40 CST 2026`、`up 2 hours 32 minutes`），退出码与哨兵读法同下。**本节其余条目除标注者外仍是 `[待对端实测]`**，尤其是 PATH 三条对比与 Pi 账户的登录 shell——本轮只跑了「能执行」，没跑「环境差在哪」。
 
 - 退出码：`[本机实测]` 两条账都销了（W7，本机服务端，两客户端逐条一致）。连接层失败（域名解析失败、端口无监听）→ **rc=255 且 stdout 空**；远端命令自身 `exit 255` → **同样 rc=255、stdout 空**。两者**完全同码**，所以「仅凭退出码不可区分」不是推测而是实测结论，判别只能用哨兵：`ssh pi 'cmd && echo __DONE__'` 看 stdout。同批实测的其余码：`false` → 1、`exit 7` → 7、命令不存在 → 127（stderr `zsh:1: command not found: ...`）、成功 → 0 且哨兵在 stdout。
 - 读退出码的坑 `[本机实测]`：不要把 ssh 直接管进 `sed`/`grep` 再读 `$?`，那拿到的是管道末端的码。本机实测过一次假 `rc=0`——`ssh ... | sed 's/^/  /'` 之后 `$?` 是 `sed` 的 0，同一命令不接管道重跑才是真实的 255。要同时留输出与退出码就分两步：`out=$(ssh ... 2>err.txt); rc=$?`。
@@ -247,13 +286,13 @@ Pi 侧运行 `ttyd -p 7681` 后，电脑或手机浏览器打开 `http://<pi 地
 
 | 观察 | 归属 | 电脑侧动作 |
 |------|------|-----------|
-| 端口探测不通 + `Connection timed out` | 可达性 | 查地址是否变、两端是否同网段。**不唯一指向地址漂移**，也可能是防火墙、AP 隔离或对端未开机 |
+| 端口探测不通 + `Connection timed out` | 可达性 | 查地址是否变、两端是否同网段。**不唯一指向地址漂移**，也可能是防火墙、AP 隔离或对端未开机、或**本机按应用分流把发起方挡在局域网外**（见本表下方那条实测） |
 | 端口探测 open + `Connection refused` | 对端未监听 | 含「系统还没启动完」这种等待即可的情形；sshd 本身归 Pi 侧稿 |
 | **本机**回环上 `Connection refused`，且对端确实没起 | 可能是本机保留端口 | `[本机实测]` 先查 `netsh int ipv4 show excludedportrange protocol=tcp`：落在保留段（本机含 2170–2269 等）时该端口连不上与对端状态无关。只在排查本机自建的测试端点时遇到，Pi 的真实地址不受影响 |
 | `Could not resolve hostname` | 定名 | 跑 `ssh -G pi` 看 hostname 解析成了什么；`.local` 写法撞上本机无 mDNS 时也是这条。若写的是短主机名，另用 `ping raspberrypi` 单测——部分环境只认短名不认 `.local`，反之亦然 |
 | 输密码后毫无反应 | 输入通道 | 先确认没卡在别的提示符上：要看到 `pi@...password:` 才输。终端把输入回显关掉是正常行为，不是坏了；真正无响应多为串口 Flow control 或对端未起 getty |
 | `Host key verification failed.` / `IDENTIFICATION HAS CHANGED` | 认脸 | `[本机实测]` 已变化主机的完整告警链见第三节（含 `Offending ED25519 key in <文件>:1`、rc=255）。处置是 `ssh-keygen -R` 按实际条目键删除后重核指纹；非默认端口的键写作 `[地址]:端口` |
-| `Permission denied` / `Permission denied (publickey,password)` | 递钥 | `[本机实测]` 服务端允许 `publickey,password` 时文本就是 `(publickey,password)`。先用 `PasswordAuthentication=no` 复现判真伪；旧稿把「密码错/初始密码未改」也归在这条下，两者症状相同需分别判 |
+| `Permission denied` / `Permission denied (publickey,password)` | 递钥 | `[本机实测]` 服务端允许 `publickey,password` 时文本就是 `(publickey,password)`。先用 `PasswordAuthentication=no` 复现判真伪；旧稿把「密码错/初始密码未改」也归在这条下，两者症状相同需分别判。`[对端实测]` 2026-10-19 还多一种：**公钥行内容错但长度看不出来**——`ssh -v` 显示客户端 Offer 的指纹与服务端日志同一串仍被拒，按第五节用 `ssh-keygen -lf ~/.ssh/authorized_keys` 比指纹，别用 `wc -l`/`wc -c` |
 | `Permission denied, please try again.`（连续两次） | 递钥 / 输入通道 | `[本机实测]` 这是**密码认证被回退使用**的痕迹：没加 `PasswordAuthentication=no` 也没配 `BatchMode yes` 时才会出现。agent 里看到它 = 密钥没生效且在等人工输密码 |
 | `Too many authentication failures` | 递钥 | 确认 `IdentitiesOnly yes` 生效，未把多把密钥轮询上去 |
 | `Bad configuration option` | 定名 | 该选项可能只被其中一个客户端支持；按端回退，不要整段删。`[本机实测]` 取值非法时报的是 `unsupported option "<值>"` 且 rc=255，不是一句 Bad configuration option，两类要分开读 |
@@ -266,23 +305,27 @@ Pi 侧运行 `ttyd -p 7681` 后，电脑或手机浏览器打开 `http://<pi 地
 
 `[本机实测]` W7 起，上表**标了实测的行**已在本机服务端复现过文本；未标的行（`timed out`、`too many authentication failures`、串口两行等）仍按 OpenSSH 常见措辞整理，以实际输出为准，不符就改这张表而不是改解释。
 
+`[本机实测]`（2026-10-19 接入轮补，取证全在电脑侧）一条**本表原先没有的归属**：`Connection timed out` 可以是**本机出网分流**造成的，与板子无关。首轮接入时同刻出现两个相反结果——编排会话这边（bash 根进程 `D:\Dev\Git\bin\bash.exe`，父进程已断）`ping` 与 TCP 22 全通，用户的交互终端（UCRT64 那套，根是 `D:\Dev\Git\usr\bin\bash.exe`）里**两个不同路径的 ssh 与 `Test-NetConnection` 全部失败**。排除过程：两端 SID 前缀完全相同（同一台机器同一账户）→ 不是网络命名空间；本机三条出站 Block 规则全是 `Program=Any` 且只限定沙箱那个账户（RID 1003）→ 不是 Windows 防火墙；剩下落在**隧道型 VPN 的按应用分流**（PureVPN，WFP 过滤器不出现在防火墙规则里）。`[本机实测]` 落点与读法：配置在 `C:\ProgramData\purevpn\settings.json`，单个顶层键下 `IsSplitEnable true`、`IsAllowLocalLAN true`，应用列表里确有 `git-bash`；**列表语义是「列出的应用走 VPN」——用户确认，且走 VPN 后到不了局域网**，所以正确修法是把那个终端**摘出**列表而不是加进去（我没动配置，副作用大于收益）。**这条没有闭环**：后来同一终端恢复正常，却没做「摘除前后同刻对照」，因此只到「与现象一致的最可能解释」，不到实测结论。可复用的判据只有两条：① `Connection timed out` 先做**同刻双终端对照**（一个终端 `False`、另一个 `True` 就直接否掉板子侧一切假设）；② 定位发起方落在哪棵进程树——`Get-CimInstance Win32_Process` 逐级查 `ParentProcessId`，**根进程已死的孤儿 bash 匹配不到任何白名单条目**，这解释了「同样一个 bash，我的通、你的不通」。顺带一条 msys 坑：把 `C:\Users\…` 形式的反斜杠路径当参数传给 `powershell.exe` 会被吃掉（变成 `C:Userszheng…`），一律写正斜杠。
+
 ## 十一、分歧未裁决清单（与本文相关，禁止互抄）
 
 按 `.ai/current.md` 派单约束，以下只并列、不择一，裁决需实测或权威手册：
 
-1. ~~**新镜像默认账户与 SSH 是否预置**~~ **已由 V5 裁决（2026-10-15，官方文档，非实测）**：当前镜像**不预置 `pi`**，用户名由 Imager 的 *User* 子标签或首启向导设定；**SSH 默认禁用**（官方原文「By default, Raspberry Pi OS disables the SSH server.」）。对本文的三点直接影响：① 第三节 config 的 `User` 必填且写实际账户；② 第五节递钥**之前**必须先走对端使能，不存在「拿到 IP 就能 ssh」的默认状态——无头两条官方路径是 boot 分区同时放空文件 `ssh` 与 `userconf.txt`（`<用户名>:<openssl passwd -6 哈希>`），或先用显示器+键盘在系统内开（`raspi-config` → `3 Interface Options → I1 SSH`），细则在 `rpi-network.md`；③ 第一次连接**有没有密码可输**取决于装机时设了什么，本文不写死凭据。本板装的是哪一张镜像、落在裁决的哪一边，仍是 `[待对端实测]`，判据四条在 `rpi-network.md`「仍需上板实测」。
+1. ~~**新镜像默认账户与 SSH 是否预置**~~ **已由 V5 裁决（2026-10-15，官方文档，非实测）**：当前镜像**不预置 `pi`**，用户名由 Imager 的 *User* 子标签或首启向导设定；**SSH 默认禁用**（官方原文「By default, Raspberry Pi OS disables the SSH server.」）。对本文的三点直接影响：① 第三节 config 的 `User` 必填且写实际账户；② 第五节递钥**之前**必须先走对端使能，不存在「拿到 IP 就能 ssh」的默认状态——无头两条官方路径是 boot 分区同时放空文件 `ssh` 与 `userconf.txt`（`<用户名>:<openssl passwd -6 哈希>`），或先用显示器+键盘在系统内开（`raspi-config` → `3 Interface Options → I1 SSH`），细则在 `rpi-network.md`；③ 第一次连接**有没有密码可输**取决于装机时设了什么，本文不写死凭据。本板装的是哪一张镜像、落在裁决的哪一边，**已由 `[对端实测]` 2026-10-19 核完**：Raspbian 13 (trixie)、`/home` 下无 `pi`、`sshd` 为 `enabled`、boot 分区无 `ssh`/`userconf.txt`——落在「不预置 `pi`」这一侧，四条判据与读法在 `rpi-network.md`「首轮板上基线」，本文不重复。
 2. **串口是否引入 PuTTY/plink 依赖**：`[本机实测]` 本机未安装；且串口是独占资源，与本仓多 agent 并行前提冲突。属用户串行安排范围，不在本文决定。
 
 已裁决、不再并列的三条：**主机名 `raspberrypi.local` vs 只用 IP** 是取舍而非待实测的技术分歧，Pi 侧稿与本稿一致采用「自动化与文档一律写 IP，`.local` 只作人工临时排查」，详见第三节；本机 mDNS 是否可解析仍未验，但不影响该取舍。**ttyd 是否留档** 随 Pi 侧稿补齐「网页终端 ttyd（Pi 侧）」而关闭：安装与常驻已有归口，第九节的消费侧内容不再悬空。**新镜像账户与 SSH 预置** 由 V5 按官方文档裁完（见本节第 1 条），本稿的连带改动是 `User` 占位符改 `<用户>`、第一节与第三节的措辞随之落地——注意这仍是手册结论，本板实际装的是哪张镜像要上板确认。
 
 ## 十二、状态
 
+- **接入已通（`[对端实测]` 2026-10-19）**：`ssh pi '<cmd>'` 免密可用，agent 侧能直接在板上跑命令，本文第 1–5 节的路径整条走通。**密码登录目前仍开着**（递钥与定因都靠它兜底），关不关由用户决定；关之前按第五节那条硬约束——先确认有一条能改回来的通道（本板当前是 HDMI 直连，串口工具 `plink`/PuTTY 仍未装）。
 - **首要未知项**：Pi 上非交互 shell 的 **PATH 具体差哪几项**。机制已由 W7 收窄（`$0` = 账户登录 shell、无 tty），但「差哪几项」是那台设备的属性，只能接板测。它决定 agent 的调用要不要统一包 `bash -lc`。
 - W7 已在本机服务端销账的项（原 `[待对端实测]`，现 `[本机实测]`，全部与 Pi 无关）：`accept-new` 的**行为层**（陌生主机落盘、已变化主机拒绝、`no` 放行且降级密码类认证、`ask` 非交互是立即失败而非挂起）、远端 `exit 255` **与连接层失败同码**（哨兵判据由此成立）、`-t`/`-tt` 在三种 stdin 下的**完整 pty 矩阵**（含 `< NUL` 在 Windows 客户端上会被当 tty）、pty 下的 `\r\n` 合并流、递钥 one-liner 的**执行与权限**（含不幂等）、`PasswordAuthentication=no` **判真的正反两面**、tmux 无 tty 下 `-A` **确实失败**且 `-d` 可用、`nohup` 后台不断线、scp **真实双向传输**、`bash -s`、CRLF 的**真实报错文本与触发条件**。
 - 仍 `[待对端实测]`（都是设备属性，本机服务端替不了）：Pi 侧 PATH 三条对比、Pi 账户的登录 shell 是什么、tmux 装没装、sshd 权限严格模式是否静默拒钥、rsync 在不在、`-r` 目录传输与对端文件归属、mDNS 能否解析 `.local`、串口插拔认口与终端参数。清单里 V6 那批「需要一次真 KEX 就行」的项已从这条清单移出。
+- `[对端实测]` 2026-10-19 首轮从这条清单里**只移出「递钥/判真是否成立」**（已在真对端复现正例，见第五节）。「sshd 权限严格模式静默拒钥」**没有被观察到，但已被排除为本轮那次失败的原因**——逐连接调试实例显示 sshd 正常读到 `authorized_keys` 且无权限告警，拒的是**内容**不是权限；所以这一条继续留在清单里，考法要换成「故意把 `~/.ssh` 改成组可写再看是否静默拒」，属破坏性测试，做之前先确认板子上没接负载。
 - 次要未知：两客户端在**行为层**是否等值——W7 跑完后是「已证等值」（认脸、退出码、scp 别名、pty 矩阵逐条一致），唯一分道是 stdin=`NUL` 时的 tty 判定，属 CRT 差异不是版本差异。本机 mDNS 能否解析 `.local` 仍未验。
 - 工具缺口待决：PuTTY 或 `plink`（串口救援路径依赖，本机未装）、WinSCP（可选图形）。本机 SSH 服务端**已落地并停用**（WSL `openssh-server`，`ListenAddress 127.0.0.1` + 非默认端口，测完 `stop` + `disable`；复现命令见第一节「本机测试服务端」行），留着不占对外端口，后续 OpenSSH 语义类实测可再启它，不必等板子。
-- 实测顺序（接板后只跑**设备属性**那几条，OpenSSH 语义类已由 W7 在本机服务端销账，不必重跑）：按 Pi 侧基线探测确定 `HostName` 的实际 IP → 建 config → `-G` 双端复核 → 端口探测 → 认脸**首次落盘**一次（只为确认这台设备的键与指纹，不重测语义）→ 递钥 → `PasswordAuthentication=no` 判真 → Pi 侧 PATH/tty 三条对比 → `command -v tmux` 与 tmux 会话 → scp `-r` 与对端文件归属 → rsync 是否存在 → 串口认口与参数。**逐项命令、预期输出、失败归属与「顺序为何不可换」见 `.ai/contexts/qoder-b.md` 的「电脑侧实测清单」**，它是本文全部 `[待对端实测]` 的执行入口；逐项结果回填本文并记为 `[对端实测]` 后，清单才在窗口记录里压缩。
+- 实测顺序（接板后只跑**设备属性**那几条，OpenSSH 语义类已由 W7 在本机服务端销账，不必重跑）。`[对端实测]` 2026-10-19 进度：前七步（基线探测 → 建 config → `-G` 复核 → 端口探测 → 认脸首次落盘 → 递钥 → `PasswordAuthentication=no` 判真）**已全部完成**，下一项从「Pi 侧 PATH/tty 三条对比」续跑。原顺序如下：按 Pi 侧基线探测确定 `HostName` 的实际 IP → 建 config → `-G` 双端复核 → 端口探测 → 认脸**首次落盘**一次（只为确认这台设备的键与指纹，不重测语义）→ 递钥 → `PasswordAuthentication=no` 判真 → Pi 侧 PATH/tty 三条对比 → `command -v tmux` 与 tmux 会话 → scp `-r` 与对端文件归属 → rsync 是否存在 → 串口认口与参数。**逐项命令、预期输出、失败归属与「顺序为何不可换」见 `.ai/contexts/qoder-b.md` 的「电脑侧实测清单」**，它是本文全部 `[待对端实测]` 的执行入口；逐项结果回填本文并记为 `[对端实测]` 后，清单才在窗口记录里压缩。
 - 合稿来源：本稿 v3 吸收 `docs/pi/rpi-headless-access.md` 的电脑侧段落（PuTTY 终端参数、COM 号识别、scp/WinSCP 传文件、PowerShell 版公钥推送、SSH 排查表、ttyd 与手机客户端），并按端边界把接线/使能/镜像账户留给 Pi 侧稿。v4 由编排会话接手：补入该稿仍未落地的电脑侧条目，并把 ttyd / VNC 的对端一半补进 `rpi-network.md`，两个来源文件随后删除，文中残留的旧稿名只作出处标记。
 - 本文未覆盖：硬件形态、Pi 侧配置、业务形态。「多个 agent 远程执行」这一使用形态本身尚未确认，第六节与第七节的并发小节都以此为前提。
 

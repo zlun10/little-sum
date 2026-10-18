@@ -4,7 +4,9 @@
 **不在范围**：PuTTY、WinSCP、串口终端参数、`~/.ssh/config` 等电脑侧操作归 `rpi-ssh.md`；40 针完整引脚表与电气参数归 `rpi-gpio-pinout.md`。本文只把它们当对端引用，不复述。
 **定位变更**：本文原为「网络配置」专篇，A1 合稿后成为 Pi 侧主干，文件名不变以免断链；网线直连与 VPN 抢路由的旧结论收在末尾两节，只在走救援路径时看。
 
-每条标注证据等级：`[事实]` 硬件规格或本机已验证，`[待验证]` 依通用行为或既有文档推断、**尚未在本机跑过**。全文没有任何一条对实机的测量。
+每条标注证据等级：`[事实]` 硬件规格或本机已验证，`[待验证]` 依通用行为或既有文档推断、**尚未在本机跑过**，`[板上实测]` = 2026-10-19 起在这块 3B 上实跑得到（**该档自 2026-10-19 启用，此前全文没有任何一条对实机的测量**）。回填 `[板上实测]` 时必须带上日期、命令与实际输出；只有「从电脑侧观察到板子的现象」的，属电脑侧实测，写在 `rpi-ssh.md`，不升格成本档。
+
+**敏感内容规则（2026-10-19 与 `rpi-ssh.md` 同一条）**：口令、私钥、公钥正文、账户名、主机名、SSID 与局域网 IP 一律不写进仓库，文档继续用 `<用户>`/`<addr>`/`<SSID>` 占位；主机键是指纹类公开材料，只在 `rpi-ssh.md` 第四节作为比对基准落一次。
 
 ## 镜像与默认账户基线
 
@@ -31,7 +33,7 @@
 
 说法一不是误传，是**过期**：官方文档仓库 issue #2537（2022-05-11）已记录「默认用户已被移除」，而示例中的 `pi`/`raspberry` 直到 PR #3310（分支 `default-user-retcon`，2023-12-08 合并）才从全部文档示例里清除。这扇窗口里官方页面自身还在教 `pi`/`raspberry`，教程照抄，于是流传至今。
 
-**这块板子属于哪一边，手册裁不了**（取决于 SD 卡镜像的下载日期），维持 `[待验证]`，板上判据进了「仍需上板实测」表。因此本文所有示例的用户名一律写 `<用户>` 占位，不写死 `pi`。
+**这块板子属于哪一边**：手册裁不了（取决于 SD 卡镜像的下载日期），但**已由板上实测裁完**——见下面「首轮板上基线」（`[板上实测]` 2026-10-19）。本文所有示例的用户名继续写 `<用户>` 占位，不写死 `pi`，也不写本板实际用的那个名字。
 
 判别方法（拿到板子第一步全套跑完）：
 
@@ -43,6 +45,26 @@ ls /boot/firmware/ 2>/dev/null || ls /boot/   # 有无 ssh / userconf.txt 预置
 ```
 
 串口登录用的是同一个账户、同一套凭据，串口里改密码 SSH 侧同步生效；这条基线不落实，下面所有「先连进去」的步骤都无从判断成败。
+
+### 首轮板上基线（`[板上实测]` 2026-10-19，经 SSH 执行，未接串口）
+
+上面那四条判据全套跑完，本板落在 V5 裁决的**「当前镜像」那一侧**，四条逐一记分：
+
+| 判据 | 实际输出 | 读法 |
+|---|---|---|
+| `grep -s "^\PRETTY_NAME" /etc/os-release` | `Raspbian GNU/Linux 13 (trixie)` | Bookworm 之后一代，`VERSION_CODENAME` 的「只给上界」顾虑在这里不构成歧义 |
+| `uname -r` | `6.12.47+rpt-rpi-v7` | **32 位 v7 内核**，与 3B 是 BCM2837（ARMv8 但跑 32 位系统）相符 |
+| `ls /home` | 只有一个目录，**不是 `pi`** | 「不预置 `pi`」在本板成立；账户名由装机时设定（本文不写它） |
+| `systemctl is-enabled ssh` | `enabled` | SSH 开箱就在听 |
+| `ls /boot/firmware/` | 有 `bcm2708-rpi-b.dtb` 一批，**无 `ssh`、无 `userconf.txt`** | boot 分区是 Bookworm 起的 `/boot/firmware` 布局；**本板的 SSH 不是 boot 预置法开的**，而是装机时由 Imager/首启向导或 `raspi-config` 打开——官方那条「只放 `ssh` 不生效」的路径在本板没有留下痕迹 |
+
+两条附带实测，都属于「设备属性」而不是配置：
+
+- `ssh-keygen -l -f /etc/ssh/ssh_host_ed25519_key.pub`（对端自报主机键指纹）与电脑侧 `known_hosts` 所存逐字符一致——认脸的核对方法在 `rpi-ssh.md` 第四节，本文不复述。
+- `/var/log/auth.log` **读不到**（`tail` 报 `cannot open`）。这代 Raspbian 的认证记录只在 journald，`[待验证]` 「`/var/log/auth.log` 存在」的一切旧写法在本板都不成立。但本轮定因**没走** `journalctl`，走的是逐连接调试实例（`rpi-ssh.md` 第五节），所以这条只到「该路径不可用」，不到「journald 里能看到什么」。
+
+**「权限不对时 sshd 静默拒公钥」这条在本板仍未真正观察到**：`[板上实测]` 逐连接调试实例里 sshd 正常读到 `authorized_keys`、没有任何权限告警，那次失败的原因是**文件里的公钥内容与客户端那把不是同一把**（手打错的），不是权限。所以本节原来那句「权限不对→静默退回密码提示」仍是文档结论 `[待验证]`，只是它不再是首轮排障的头号嫌疑。
+
 
 另有一处**不是代际问题、是取舍**的分歧：用什么地址连。源文档主张 `ssh pi@raspberrypi.local`（依赖 mDNS），本文既有决策是「只用 IP」。这里不属未实测的技术分歧，而是取舍——mDNS 只是省得查 IP，它不保证可用（且 VPN 会改 DNS 后缀、可能拦多播，见「与 VPN 共存」）。因此文档与脚本一律写 IP，mDNS 名只作人工临时排查的便利手段，不进任何自动化调用。
 
@@ -135,6 +157,19 @@ sudo cp /boot/firmware/cmdline.txt /boot/firmware/cmdline.txt.bak
   这仍是手册结论而非板上结果 `[待验证]`：执行后回读断言两个地址都在，`nmcli -f ipv4.dns,ipv4.addresses,ipv4.gateway con show "<SSID>"`。若空格写法只落进一个地址，改逐条追加 `+ipv4.dns`，并把实测结果记回本节。
 - 填错网关或 DNS 的表现是「SSH 通但 apt 失败」，与链路本身无关，别去查 WiFi。
 
+### 首轮 WiFi 观察：一次约 40 秒的整体不可达，**根因未定**
+
+`[板上实测]` 观察口径要写清楚：下面这批数据是**从电脑侧对板子的地址取样**得到的（板子当时已能免密登录，所以「SSH 通」可直接当链路判据），属电脑侧观察 + 板上取数混合，不是板子自己记录的日志。
+
+- 一次发作：同一进程内 ICMP 与 TCP 22 同刻对照循环里，`23:00:25 → 23:01:05` 连续 5 次**两路全失败**（约 40 秒），随后 `23:01:15 → 23:02:21` 恢复，其间只有 `23:01:36` 出现**一次 ICMP 丢而 TCP 仍通**。→ 「整机消失」与「丢一个包」是两种现象，别混成一条。
+- 发作后 3 分钟的 ARP 观察器：**36/36 全通**，绑定始终是同一个 MAC ↔ 同一个地址，**没换过址**。→ 那 40 秒里不是 DHCP 换址（至少这次没抓到第二次发作）。
+- 板上侧同时取回：`vcgencmd get_throttled` → **`0x50000`** =  bit16「开机以来发生过欠压」+ bit18「发生过限频」，低四位为 0 即**此刻没在限**；`vcgencmd measure_temp` → `36.5'C`；`dmesg | grep -icE 'under-voltage|brcmf.*error'` → **0**（`dmesg` 在本板非 root 也可读，已另行确认，所以这个 0 不是读不到造成的假阴性）。
+- 地址形态：`ip -4 addr show wlan0` → `/23`、`dynamic`，即 DHCP 且网段比 `/24` 宽，`arp -a` 里同段还有路由器与其它设备，**不是**板子自己编的地址。
+
+**三个候选都没被排除，欠电是目前唯一有实测旁证的那个**（`0x50000` 只说明「发生过」，不能证明这 40 秒由它引起）：① 供电不足导致 WiFi 芯片瞬断；② 2.4G 重关联；③ WiFi 省电模式没关（本节上面那条 `[待验证]`，`iw dev wlan0 get power_save` 本轮**没跑**）。判别顺序建议：先换电源再复现一次（成本最低、能直接否掉 ①），仍发作就 `journalctl -b | grep -iE 'wlan0|brcmf|deauth'` 看发作时刻有没有关联层日志——**这条要等下一次发作**，本轮没抓到。
+
+另记一条与本节无关但会影响后续所有实测的：`[板上实测]` `/var/log/auth.log` 在本板不可用（见「首轮板上基线」），凡文档里靠读该文件排障的写法都要换成 `journalctl`。
+
 ### 排障（WiFi 专有，接在「排障顺序」的链路层之前）
 
 - `rfkill list all` → 若有 `Soft blocked: yes` 则 `rfkill unblock wifi`。
@@ -197,11 +232,11 @@ sudo cp /boot/firmware/cmdline.txt /boot/firmware/cmdline.txt.bak
 
 | 事项 | 板上判据 |
 |---|---|
-| 这台 3B 的图形驱动路径（KMS 是否默认启用）——决定上面 3 里那批 `hdmi_*` 旧键到底生效不生效 | `grep -n 'vc4-kms-v3d\|vc4-fkms-v3d' <config.txt 实际路径>`（`#` 注释行不算启用）、`ls /dev/dri`、`journalctl -b \| grep -i vc4` |
-| 这块 3B 的 SD 卡落在基线节的哪一边（`pi`/`raspberry` 还能不能用、SSH 是否开箱在听）——官方只说「默认用户已移除」发生在 2022-05-11 之前，不按发布日期给出精确分界，本机装的是哪张镜像更不可能由手册裁出 | `cat /etc/os-release`（看 `VERSION_CODENAME`）、`ls /home`（有无 `pi` 目录）、`systemctl is-enabled ssh`、`ls /boot/firmware/ 2>/dev/null \|\| ls /boot/`（有无 `ssh`/`userconf.txt`）；四条判据见「镜像与默认账户基线」 |
-| `gpu_mem` 实际生效值（默认表是按容量推的，未在这块板上读过） | `vcgencmd get_mem gpu`，交叉核对 `vcgencmd get_config int` |
-| `nmcli` 静态配置后 DNS 是否两个都落盘（分隔符按官方示例选了空格） | 见「地址固定」小节的回读命令 |
-| 复合视频在 3B 上是否真的默认可输出（默认值 `1` 是文档结论） | 接 AV 线观察，或 `grep -in 'tvout\|sdtv' <config.txt>` 看有无显式覆盖 |
+| ~~这台 3B 的图形驱动路径（KMS 是否默认启用）~~ **已核（`[板上实测]` 2026-10-19）** | 判据原样跑通：`/boot/firmware/config.txt` 第 26 行 `dtoverlay=vc4-kms-v3d`**未被注释**，`/dev/dri/` 下有 `card0` 与 `renderD128`。→ **本板默认走 KMS**，因此上面第 3 里那批 legacy `hdmi_*` 旧键大多不生效（`[待验证]` 具体哪几条在 KMS 下仍被读取，本轮没逐项验） |
+| ~~这块 3B 的 SD 卡落在基线节的哪一边~~ **已核** | 四条判据全套跑完，见「首轮板上基线」：Raspbian 13 (trixie)、`/home` 无 `pi`、`sshd` enabled、boot 分区无 `ssh`/`userconf.txt` |
+| ~~`gpu_mem` 实际生效值~~ **已核（`[板上实测]` 2026-10-19）** | `vcgencmd get_mem gpu` → `gpu=76M`；`vcgencmd get_config int` 里**没有 `gpu_mem` 行**，即未显式配置，76M 是默认推导——V1/V3 那条「默认 76 的依据是内存 ≥1 GB」在本板对上 |
+| `nmcli` 静态配置后 DNS 是否两个都落盘（分隔符按官方示例选了空格） | 见「地址固定」小节的回读命令。**未验**：本板当前仍是 DHCP（`[板上实测]` `ip -4 addr show wlan0` 显示 `/23` 且 `dynamic`），未做静态配置 |
+| 复合视频在 3B 上是否真的默认可输出（默认值 `1` 是文档结论） | 半条已核：`[板上实测]` `vcgencmd get_config int` 读到 `enable_tvout=1`，与 V1「3B 上默认即为 1」一致；**插 AV 线是否真有画面仍未验**，本板全程经 HDMI 输出 |
 
 ### 开机进命令行还是桌面（cmdline.txt / raspi-config）
 
@@ -448,6 +483,7 @@ Pi 侧三个必查点：
 
 ## 状态
 
+- 2026-10-19（首轮板上实测，接入轮，本窗口经 SSH 执行）：**本文启用 `[板上实测]` 一档**，此前全文零实测的状态结束。落地的五处：① 「镜像与默认账户基线」新增**首轮板上基线**小节，四条判据全套跑完——Raspbian 13 (trixie)、内核 `6.12.47+rpt-rpi-v7`（32 位 v7，与 3B 相符）、`/home` 无 `pi`、`sshd` **enabled**、boot 分区**无 `ssh`/`userconf.txt`**（→ 本板不是 boot 预置法开的 SSH），V5 那句「本板落在哪一边手册裁不了」就地改为已裁；② 「仍需上板实测」表**三行升格为已核**：KMS **默认启用**（`config.txt` 第 26 行未注释的 `dtoverlay=vc4-kms-v3d` + `/dev/dri/card0`）、`gpu_mem` 实际 `76M` 且 `get_config int` 里无 `gpu_mem` 行（默认推导对上）、`enable_tvout=1` 读到（V1 的文档默认值首次与实测一致）；未动的两行写清了为什么仍未验（DNS 回读——本板仍是 DHCP `/23` `dynamic`；复合视频画面——没插 AV 线）；③ WiFi 节新增**一次约 40 秒整体不可达**的观察（ICMP 与 TCP 同刻对照、发作后 3 分钟 ARP 绑定不换址、`get_throttled=0x50000` 即「发生过欠压+发生过限频」而此刻未限、`dmesg` 里 brcmf/under-voltage 计数 0），**根因未定**，三个候选一个都没排除，判别顺序写明「先换电源」；④ 新增 `/var/log/auth.log` **在本板不可用**（认证记录只在 journald），凡依赖该文件的旧写法都要换；⑤ 「权限不对→sshd 静默拒公钥」这条**本板仍未真正观察到**，首轮那次失败的内容原因是 `authorized_keys` 里的公钥与客户端不是同一把，排障路径见 `rpi-ssh.md` 第五节。**敏感口径本条一并确立**：账户名、主机名、口令、公钥正文、局域网 IP 一律不入库，文档继续用占位符。
 - 2026-10-15（编排会话跨稿同步）：V3 由 `minimax-a` 判「无线芯片是本篇错」，同步时改判为**命名层次差异，两边都引到了官方原文**——产品页与 2016 发布稿写 BCM43438（`raspberrypi.com/products/raspberry-pi-3-model-b` 的 Specification 段；`raspberrypi.com/news/raspberry-pi-3-on-sale`），而 Debian `firmware-brcm80211` 为 3B 提供的是 `brcmfmac43430-sdio.raspberrypi,3-model-b.txt`，即驱动/固件侧归入 43430 一族。接口盘点据此改成双名并列并给出用名规则；排障两处与 WiFi 段同步。顺带把 V3 留作「无法裁决」的 **BLE 裁掉**：官方两处（3B 产品页、《Raspberry Pi product series explained》里 3B 那行「Bluetooth 4.1, Bluetooth Low Energy (BLE)」）都明写 3B 带 BLE，3B+ 发布稿的「加入 BLE」是文案不严谨，不属反证。另记一条：`raspberrypi.com` 的 3B 产品页**并未下架**，V3 报的 404 与本会话早前的 403 一样是抓取被拦，搜索引擎索引里该页规格段完整可读——所以本篇的官方依据不只有旧站。仍是手册层结论，板上复核 `btmgmt -i hci0 info`、`dmesg | grep -i brcmfmac`，无 `[待验证]` 升格。
 - 2026-10-15（V5 手册核对，本窗口）：最后一条未裁决的分歧「新镜像默认账户与 SSH 是否预置」由官方文档裁完，两说不再并存——**当前镜像不预置 `pi`、默认禁用 SSH**（`remote-access/ssh.adoc` 原文「By default, Raspberry Pi OS disables the SSH server.」，账户由 `getting-started/install.adoc` 的 Imager *User* 子标签或 `configuring.adoc` 的首启向导创建）；`pi`/`raspberry` 直连只适用于早期镜像。官方文档自身的滞后解释了说法一为何流传：issue #2537（2022-05-11）首句已写「Now the default user has been removed…」，示例里的 `pi`/`raspberry` 却到 PR #3310（分支 `default-user-retcon`，2023-12-08 合并）才清干净。无头启用 SSH 的官方预置法是 boot 分区**同时**放空 `ssh` 与 `userconf.txt`（`setting-up.adoc` 的「Manual setup for SSH」，哈希用 `openssl passwd -6`），只放 `ssh` 不足以登录。据此本文全部示例用户名改为 `<用户>` 占位（含 ttyd unit 的 `User=`），基线节的探测命令把 `id pi` 换成 `ls /home`；`bootfs` 里 `wpa_supplicant.conf` 自 Bookworm 起失效原为推断，现补上官方原文。**仍未裁决**：移除动作对应哪一次镜像发布，官方不按发布日期陈述，本机装的又是哪一张，维持 `[待验证]` 并把四条板上判据写进「仍需上板实测」。本轮**未新增任何实测**，无 `[待验证]` 升格；`rpi-ssh.md` 的同名示例未改（认领在 qoder-b），只在「与其他文档的分工」留了同步提示。
 - 2026-10-15（V1 手册核对，本窗口）：显示侧 4 条存疑与 nmcli DNS 分隔全部对官方文档核完，结论集中在「手册核对结论」与「仍需上板实测」两节。**四条里三条由手册裁决**：裸 `hdmi` 键不存在（`hdmi=0` 弃用，禁用 HDMI 改用 `hdmi_ignore_hotplug=1`——这同时纠正了上一条把 `hdmi=0` 简单判给 `hdmi_force_hotplug=1` 的择一，两个需求方向相反）；`enable_tvout` 在 3B 上默认即为 `1`，源文档「3B 要显式开启且与 HDMI 互斥」的机型判断是反的，3B 的复合视频参数是 `sdtv_mode` 一族；`gpu_mem` 默认 `76` 成立但依据是「内存 ≥1 GB」而不是机型。**第四条（3B 是否默认启用 KMS）官方文档没有按机型陈述默认值，仍无法裁决**，维持 `[待验证]`。nmcli `ipv4.dns` 多值分隔裁决为空格加引号（nmcli-examples(7) 官方示例），逗号写法已从命令中删除——逗号在官方属性表里只对 `ipv4.addresses` 有依据；「地址固定」小节的回读断言保留，因为这条仍是文档结论、不是板上结果。本轮**未新增任何实测**，`[待验证]` 一条未升格。
