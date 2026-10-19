@@ -107,7 +107,10 @@ A：KMS 开着时的最小允许值 `[待验证]`，本仓不编数；且只在�
 A：不是。`cut -d: -f3 /proc/<pid>/cgroup` 显示它们挂在 `/user.slice/user-1000.slice/user@1000.service/…`，是**这次 SSH 登录自己拉起的 user session**，与 `graphical.target` 无关；要清得 mask user units，代价是音频和 portal 没。→ 判据：残留先看 cgroup 再决定关不关，别一律当桌面残留。
 
 **Q：第②档（关 `getty@tty1` ＋ 改 `cmdline.txt`）做完要重启吗？**
-A：要。`cmdline.txt` 只在 boot 阶段由固件读一次，`disable getty@tty1` 只摘下次开机的 `wants` 链接、当前实例还在跑——所以 ② 当场只落配置，省不了内存，买的是「输出只从串口走、tty1 上没有登录口」这条确定性。本板 2026-10-19 已改完并逐 token 核过差异，**未重启、生效未证**。详见 `rpi-network.md`「② 的执行实录」。
+A：要。`cmdline.txt` 只在 boot 阶段由固件读一次，`disable getty@tty1` 只摘下次开机的 `wants` 链接、当前实例还在跑——所以 ② 当场只落配置，省不了内存，买的是「输出只从串口走、tty1 上没有登录口」这条确定性。本板 2026-10-19 已改完、已重启复验：`/proc/cmdline` 无 `tty1`/`quiet`/`splash`，`getty@tty1` = `disabled`+`inactive`，串口 getty 仍 `active`。详见 `rpi-network.md`「② 的执行实录」。
+
+**Q：重启之后 `free` 从 194 掉到 136，是 ② 又省了一批？**
+A：不是。② 不动内存；差值来自**这次连接还没拉起 user session**（portal/wireplumber/rpi-connectd 那一类）。→ 判据：同一块板的 `free` 要按「这次会话登录多久」对照，跨会话比数必然得出假的「又省了」。
 
 **Q：改 `cmdline.txt` 有什么会把板子变砖的写法？**
 A：两件事：**整篇必须是一整行**（换行＝内核参数解析失败，直接起不来），以及**别只读一边就下结论**——本板文件里写 `console=serial0,115200`，`/proc/cmdline` 里显示 `console=ttyS0,115200`，同一个东西被别名翻译过，不是冲突。改前先 `sudo cp` 一份 `.bak`，改完用 `diff <(tr ' ' '\n' < 旧) <(tr ' ' '\n' < 新)` 数差异。

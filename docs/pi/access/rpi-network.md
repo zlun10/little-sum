@@ -342,7 +342,7 @@ systemctl get-default                        # 下次开机进哪个目标
 - `vc4-kms-v3d` 与 `/dev/dri/card0` 属驱动层，注释 overlay 才是真无 DRM，但会连带 `camera_auto_detect=1` 失效，且**注释后 boot 早期能否出图本板未验**（`[待验证]`）。`gpu_mem=76M` 在 KMS 下的最小允许值同样 `[待验证]`。
 - **关屏的前置条件本板已满足**：`/dev/serial0 -> ttyS0`（mini UART，`config.txt` 有 `enable_uart=1`），`serial-getty@ttyS0.service` 为 **active**（`enabled-runtime`）。关掉图形控制台后串口仍是登录入口。
 - **一条不可自动恢复的代价**：远程看画面靠 `wayvnc.service` + `wayvnc-control.service`（后者 `BindsTo=wayvnc.service`），随顶层一起消失。SSH 与 ttyd 不受影响。
-- **四个档位按代价递增，本板停在第几档由用户定点**：① `sudo systemctl set-default multi-user.target`（可逆，免重启生效用 `isolate`）——**2026-10-19 已由用户选定并执行，见下面的执行实录**；② 在 ① 之上 `sudo systemctl disable getty@tty1`，并把 `cmdline.txt` 的 `console=tty1`、`quiet splash`、`plymouth.ignore-serial-consoles` 删掉只留串口那一条 console——省不了内存，买到「所有输出只从串口走」这条确定性；③ 注释 `dtoverlay=vc4-kms-v3d` 与 `max_framebuffers=2`，真无 DRM 与 HDMI 输出，代价是 `camera_auto_detect` 失效、且要重启才生效（改坏时**串口就是唯一救援入口**，所以 ② 必须排在 ③ 前面做）；④ 只在走完 ③ 之后才谈 `gpu_mem` 下调。①② 属系统层、可当场回退，③④ 属固件层。
+- **四个档位按代价递增，本板现停在 ②**：① `sudo systemctl set-default multi-user.target`（可逆，免重启生效用 `isolate`）——**2026-10-19 已由用户选定并执行，见下面的执行实录**；② 在 ① 之上 `sudo systemctl disable getty@tty1`，并把 `cmdline.txt` 的 `console=tty1`、`quiet splash`、`plymouth.ignore-serial-consoles` 删掉只留串口那一条 console——省不了内存，买到「所有输出只从串口走」这条确定性；**2026-10-19 同日也已执行并重启复验，见「② 的执行实录」**；③ 注释 `dtoverlay=vc4-kms-v3d` 与 `max_framebuffers=2`，真无 DRM 与 HDMI 输出，代价是 `camera_auto_detect` 失效、且要重启才生效（改坏时**串口就是唯一救援入口**，所以 ② 必须排在 ③ 前面做）——**未执行，等用户定点**；④ 只在走完 ③ 之后才谈 `gpu_mem` 下调。①② 属系统层、可当场回退，③④ 属固件层。
 
 ### ① 的执行实录：省到的不是 249 MB，是 50 MB（`[板上实测]` 2026-10-19，经 SSH 执行）
 
@@ -360,12 +360,12 @@ systemctl get-default                        # 下次开机进哪个目标
 - **剩下的三笔省不到，而且不该省**：`wireplumber` 23 MB、`xdg-desktop-portal` 15.6 MB、`rpi-connectd` 11.9 MB 仍在，`cut -d: -f3 /proc/<pid>/cgroup` 显示它们全挂在 `/user.slice/user-1000.slice/user@1000.service/…`——**是这次 SSH 登录自身拉起的 user session**，与 `graphical.target` 无关。要清它们得 mask user units，代价是音频与 portal 没，且下次图形登录还得改回，不划算。→ **判据：`ps` 里的残留要先认 cgroup 再决定关不关，别一律当桌面残留。**
 - **一条实测纠正（推翻我上一版正文）**：`cmdline.txt` 文件里**原文就是 `console=serial0,115200`**，而 `/proc/cmdline` 显示的是 **`console=ttyS0,115200`**——`serial0` 是固件写进设备树的 alias，内核按 alias 解析成实际端口（本板 `tr -d '\0' < /proc/device-tree/aliases/serial0` → **`/soc/serial@7e215040`** = mini UART，`serial1` → `7e201000` = 全功能 UART；`/dev/serial0 -> ttyS0`），所以**两个字符串都出现、指同一设备，不矛盾**。上一版正文据 `/proc/cmdline` 断言「文件不是 `serial0`」是错的：读的是运行时视图不是源文件。→ **判据：比内核命令行要「文件值」与 `/proc` 值成对读，只读一边必然得出假冲突，而且它会以「实测纠正」的名义盖掉原本正确的正文。** 驱动侧把 alias 绑成 `ttyS0` 的具体代码路径未查，本仓只记录这条观察到的对应关系。
 - 本板 cmdline 还带 `cfg80211.ieee80211_regdom=CN`（国家码由 raspi-config 写进内核命令行，WiFi 那节的 `[待验证]` 在此有落点）。
-- **回退（一条命令，不需要重启）**：`sudo systemctl set-default graphical.target && sudo systemctl isolate graphical.target`。**重启后的持久性未验**（`get-default` 已经落在 `multi-user.target`，符号链接本身就是下次开机的依据，但本板欠压未修，这次没专门重启复验）。
+- **回退（一条命令，不需要重启）**：`sudo systemctl set-default graphical.target && sudo systemctl isolate graphical.target`。**重启后的持久性已在同日 ② 的那次重启里复验通过**（`get-default` 仍是 `multi-user.target`，`lightdm`/`graphical.target` 均 `inactive`）。
 - `getty@tty1` 当时仍 `enabled` 且 `active`——那是 ② 的范围，见下一节。
 
-### ② 的执行实录：配置已改，等一次重启才生效（`[板上实测]` 2026-10-19，经 SSH 执行）
+### ② 的执行实录：改配置＋重启复验通过（`[板上实测]` 2026-10-19，经 SSH 执行）
 
-用户点「做」，并问是否要重启。答案是**要**：`cmdline.txt` 只在 boot 阶段由固件读一次，`disable getty@tty1` 只摘掉下次开机的 `wants` 链接、当前那个 `getty@tty1` 实例仍在跑。所以本轮只落配置、不重启，重启时机由用户定（这块板欠压未修，每次重启都顺带复验一次 ① 的持久性）。
+用户点「做」，并问是否要重启。答案是**要**：`cmdline.txt` 只在 boot 阶段由固件读一次，`disable getty@tty1` 只摘掉下次开机的 `wants` 链接、当前那个 `getty@tty1` 实例仍在跑。先落配置（下面前三行），再起一次 `sudo reboot` 复验（下面复验表）。
 
 | 动作 | 命令 | 当场结果 |
 |---|---|---|
@@ -382,8 +382,20 @@ console=serial0,115200 root=PARTUUID=<分区> rootfstype=ext4 fsck.repair=yes ro
 
 - **为什么 ② 排在 ③ 前面**：③ 要注释 `vc4-kms-v3d`，改坏时唯一救援入口是串口 getty；② 先把「输出只从串口走」变成确定事实，③ 的风险才可接受。本板 `serial-getty@ttyS0` 全程 `active`，SSH 未断。
 - **② 省不了内存**：买的是「tty1 上没有可登录入口 + 启动日志全走串口」这条一致性；资源收益已经在 ① 拿掉了。
-- **回退（同样要重启才完全回退）**：`sudo cp /boot/firmware/cmdline.txt.bak /boot/firmware/cmdline.txt && sudo systemctl enable getty@tty1`。
-- **重启后要复验的四条**（也是 ① 的持久性复验）：`cat /proc/cmdline`（应无 `tty1`/`quiet`/`splash`，且 `serial0` 显示为 `ttyS0`）、`systemctl get-default` 仍 `multi-user.target`、`systemctl is-active serial-getty@ttyS0` 仍 `active`、`vcgencmd get_throttled`。**未复验前，本节全部按「配置已就位、生效未证」读。**
+- **重启后复验：全部通过**（`[板上实测]` 2026-10-19 14:20 那次 boot，由 agent 经 SSH 触发重启并等约 40 秒上线）：
+
+| 复验项 | 命令 | 结果 |
+|---|---|---|
+| 新 cmdline 真的生效 | `cat /proc/cmdline` | **无 `console=tty1`、无 `quiet splash`、无 `plymouth.ignore-serial-consoles`**；文件里的 `serial0` 显示为 `console=ttyS0,115200`，与上面的 alias 判据一致 |
+| tty1 没有登录口 | `systemctl is-enabled/is-active getty@tty1` | `disabled` / `inactive` |
+| 串口仍是入口 | 同上 `serial-getty@ttyS0` | `enabled-runtime` / **`active`** |
+| ① 重启后保住 | `systemctl get-default` | `multi-user.target`；`lightdm` `inactive`、`graphical.target` `inactive`、`pgrep labwc` 空 |
+| 内存 | `free -m` | used **136** / available 784（**全新 boot 的干净值**，比 ① 当场读到的 194 更低） |
+| 供电 | `vcgencmd get_throttled` | **仍 `0x50000`**——重启不解决欠压，硬规则继续生效 |
+
+- **一条新的读数判据**：used 从「① 之后 194」掉到「重启后 136」，差值不是 ② 省下的（② 不动内存），是**这次连接还没拉起 user session**（portal/wireplumber/rpi-connectd 那 50 MB 一类）。→ **同一块板的 `free` 读数要按「这次会话登录了多久」对照，跨会话比数必然得出假的「又省了」。**
+- **①② 现已都是「配置就位＋重启复验通过」**，不再依赖 `isolate` 的临时状态。回退仍是两条：`sudo systemctl set-default graphical.target && sudo systemctl isolate graphical.target`、`sudo cp /boot/firmware/cmdline.txt.bak /boot/firmware/cmdline.txt && sudo systemctl enable getty@tty1`（后者要再重启才完全回退）。
+
 
 ### 显示侧验证
 
@@ -590,6 +602,7 @@ Pi 侧三个必查点：
 
 ## 变更记录
 
+- 2026-10-19（关屏 ①② 执行，本窗口经 SSH 执行）：「显示输出与无头模式」的关屏小节由**方案层升为已执行层**。① `set-default multi-user.target` ＋ `isolate` 当场实测 used 244 → 194（**50 MB，不是旧记的 249**——249 是桌面会话满开时的合计，执行前 wayvnc 已 `inactive`），残留的 portal/wireplumber 经 cgroup 判认为 SSH 自身的 user session；② `disable getty@tty1` ＋ 改写 `cmdline.txt`（删 `console=tty1`/`quiet splash`/`plymouth.ignore-serial-consoles`，逐 token `diff` 核过、仍一整行、`.bak` 留底），再起 `sudo reboot` 复验：新 cmdline 生效、`getty@tty1` `disabled`+`inactive`、串口 getty 仍 `active`、**① 重启后保住**、全新 boot used 136。同时撤回上一条里我自己写错的一句：文件原文是 `console=serial0,115200`，`/proc/cmdline` 显示 `ttyS0` 是设备树 alias 被内核解析，**不是冲突**（判据：比 cmdline 要成对读文件值与运行时值）。`vc4-kms-v3d` 未动（属 ③）。
 - 2026-10-19（分目录）：本篇由 `docs/pi/` 根移入 **`docs/pi/access/`**，跨分类的相对链接改为 `../<分类>/`，指向索引层改为 `../../README.md`；**章号与散文式引用（「`rpi-xxx.md` 第 N 节」）一条未动**——散文只认文件名，而文件名在全仓唯一。分类依据与机检见 `docs/README.md` 第一节。
 
 - 2026-10-19（新增观测专章 + 关屏实测）：① `docs/pi/hardware/rpi-status.md` 成文，本篇「串口控制台」的可用性判据被它引用，「相关文档」补一条指向那篇；② 「显示输出与无头模式」新增**关屏省资源**小节，把本轮实测的 249 MB 桌面栈、`graphical.target → lightdm → labwc → wayvnc` 依赖链、串口 getty 已 active 这一前置条件，以及四档方案（均未执行）落成板上结论——该节此前四条 `hdmi_*` 全是手册层，本篇第一次有「关屏到底省多少」的数。**未做任何配置改动。**

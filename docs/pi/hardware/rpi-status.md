@@ -128,7 +128,8 @@
 | `journalctl -p err -b` | 持续刷 `bgscan … signal strength monitoring` | **未定性** |
 | WiFi | 已关联，`-48 dBm`，信道 6，省电 `on` | 可用；曾一次约 40 秒不可达，根因未定 |
 | 时钟 | 已同步，NTP active | 正常 |
-| 默认控制台 | 文件里 `console=serial0,115200`（`/proc` 显示为 `ttyS0`，别名被内核解析），串口 getty active | 可用；② 已从文件删 `console=tty1`，**未重启故运行时仍是旧串** |
+| 默认控制台 | 运行时 `console=ttyS0,115200`（文件里写 `serial0`，别名被内核解析），无 `tty1`；串口 getty active | 可用；② 已于 2026-10-19 重启复验通过 |
+| `getty@tty1` | `disabled` + `inactive`（重启后） | tty1 无登录口，唯一控制台是串口 |
 | 图形 | `multi-user.target`、lightdm `inactive`（① 已于 2026-10-19 执行）；`vc4-kms-v3d` **未注释**，KMS 驱动层仍在 | 桌面栈已停；驱动层属 ③，未动 |
 
 ## 九、假读数清单
