@@ -27,666 +27,188 @@
 - 变更记录
 
 ## 镜像与默认账户基线
-
-2026-10-15（V5）对官方文档核完，**两说各对应一个时间段，不再并存**：
-
-| 镜像 | 首次登录账户 | SSH 是否开箱可用 |
-|---|---|---|
-| 早期镜像（有 `pi` 的年代） | 预置 `pi`、密码 `raspberry`，首登强制改密 | 是，`ssh pi@<IP>` 直接可用 |
-| 当前镜像 | **不预置 `pi`**，用户名密码由 Imager 自定义设置的 *User* 子标签设定，或由首启向导创建 | 默认**不**启用。官方原文：「By default, Raspberry Pi OS disables the SSH server.」 |
-
-分界的时间锚点（官方仓库自身的记录，不是博客）：
-
-- issue #2537 `raspberrypi/documentation`，2022-05-11 提出，标题「Update references to the default user/pass」，正文首句「Now the default user has been removed we need to update all references to a default user/pass」。→ 默认账户的移除**最晚在 2022-05-11 之前已生效**，当时代际是 Bullseye。
-- PR #3310（分支 `default-user-retcon`），2023-12-08 合并，把示例里残留的 `pi`/`raspberry` 从官方文档全部清除。→ **说法一不是误传，是过期**：2022-05 到 2023-12 这扇窗口里官方页面自身还写着 `pi`/`raspberry`，教程照抄，于是流传至今。
-- `[待验证]` **确切从哪一次镜像发布起移除**，官方文档不按发布日期陈述，手册裁不了；本仓库这张 SD 卡属于哪一边，用下面的板上判据落实。
-
-依据（raspberrypi.com 页面对本机返回 403，全部改取 `raspberrypi/documentation` 仓库同源 adoc，路径写明）：
-
-- `documentation/asciidoc/computers/remote-access/ssh.adoc` —— SSH server 默认禁用。
-- `documentation/asciidoc/computers/getting-started/install.adoc` —— Imager 自定义设置里的 *User* 子标签设定用户名与密码，属必做项。
-- `documentation/asciidoc/computers/getting-started/configuring.adoc` —— 首启向导创建账户。
-- `documentation/asciidoc/computers/getting-started/setting-up.adoc` —— 「Manual setup for SSH」：boot 分区要**同时**放一个空的 `ssh` 文件和 `userconf.txt`（内容 `<用户名>:<密码哈希>`，哈希用 `openssl passwd -6` 生成），只放 `ssh` 不生效。
-- `documentation/asciidoc/computers/configuration/interfaces.adoc` —— 已在系统内的三种开法：`touch /boot/firmware/ssh` 后重启、桌面 Control Centre → Interfaces、`raspi-config` → `3 Interface Options → I1 SSH`。
-
-说法一不是误传，是**过期**：官方文档仓库 issue #2537（2022-05-11）已记录「默认用户已被移除」，而示例中的 `pi`/`raspberry` 直到 PR #3310（分支 `default-user-retcon`，2023-12-08 合并）才从全部文档示例里清除。这扇窗口里官方页面自身还在教 `pi`/`raspberry`，教程照抄，于是流传至今。
-
-**这块板子属于哪一边**：手册裁不了（取决于 SD 卡镜像的下载日期），但**已由板上实测裁完**——见下面「首轮板上基线」（`[板上实测]` 2026-10-19）。本文所有示例的用户名继续写 `<用户>` 占位，不写死 `pi`，也不写本板实际用的那个名字。
-
-判别方法（拿到板子第一步全套跑完）：
-
-```bash
-cat /etc/os-release          # VERSION_CODENAME 只给代际上界；移除发生在 Bullseye 周期内，单靠它不够
-ls /home                     # 没有 pi、只有别的目录 = 当前镜像
-systemctl is-enabled ssh     # SSH 开没开
-ls /boot/firmware/ 2>/dev/null || ls /boot/   # 有无 ssh / userconf.txt 预置文件
-```
-
-串口登录用的是同一个账户、同一套凭据，串口里改密码 SSH 侧同步生效；这条基线不落实，下面所有「先连进去」的步骤都无从判断成败。
+| 项 | 结论 | 档 |
+| --- | --- | --- |
+| 基线口径／早期 vs 当前镜像／时间锚点与「为何流传」 | 【口径】2026-10-15（V5）对官方文档核完：两说各对应一个时间段、**不再并存**；本板落点已由 `[板上实测]` 2026-10-19 裁完（下表）。用户名一律 `<用户>` 占位，不写死 `pi`、也不写本板实际名字。【早期（有 `pi` 的年代）】预置 `pi`、密码 `raspberry`、首登强制改密，`ssh pi@<IP>` 开箱可用。【当前】**不预置 `pi`**（Imager 自定义设置 *User* 子标签设定，属必做项，或首启向导创建），且默认**不启用 SSH**——官方原文「By default, Raspberry Pi OS disables the SSH server.」。【时间锚点】官方仓库 issue #2537（2022-05-11，标题「Update references to the default user/pass」，首句「Now the default user has been removed…」）→ 移除**最晚 2022-05-11 前已生效**（Bullseye 代际）；PR #3310（分支 `default-user-retcon`，2023-12-08 合并）才把示例里的 `pi`/`raspberry` 全清 → 说法一不是误传是**过期**：窗口期官方页面自身还教 `pi`/`raspberry`，教程照抄流传至今。**确切哪次镜像发布移除**：官方不按发布日期陈述、手册裁不了；本卡属哪一边用板上判据落实 | V5 裁决（官方文档；install.adoc/configuring.adoc/remote-access/ssh.adoc）＋`[待验证]`（仅指「确切发布」一格） |
+| boot 预置开 SSH／系统内三种开法／拿到板子第一步（判据全套） | 【预置法】boot 分区**同时**放空 `ssh` 文件与 `userconf.txt`（`<用户名>:<密码哈希>`，哈希 `openssl passwd -6` 生成），**只放 `ssh` 不生效**——没有可登录账户（`setting-up.adoc`「Manual setup for SSH」）。【系统内】`touch /boot/firmware/ssh` 后重启／桌面 Control Centre → Interfaces／`raspi-config` → `3 Interface Options → I1 SSH`（`interfaces.adoc`）。【第一步判据】`cat /etc/os-release`（`VERSION_CODENAME` 只给代际上界，移除发生在 Bullseye 周期内、单靠它不够）、`ls /home`（无 pi 只有别的目录＝当前镜像）、`systemctl is-enabled ssh`、`ls /boot/firmware/ 2>/dev/null \|\| ls /boot/`（有无 `ssh`/`userconf.txt` 预置文件）。串口登录用同一账户同一凭据、改密码两侧同步；这条基线不落实，后面所有「先连进去」的步骤无从判断成败 | 文档层 `[待验证]`（未上板）＋判据命令 |
 
 ### 首轮板上基线（`[板上实测]` 2026-10-19，经 SSH 执行，未接串口）
-
-上面那四条判据全套跑完，本板落在 V5 裁决的**「当前镜像」那一侧**，四条逐一记分：
-
-| 判据 | 实际输出 | 读法 |
-|---|---|---|
-| `grep -s "^\PRETTY_NAME" /etc/os-release` | `Raspbian GNU/Linux 13 (trixie)` | Bookworm 之后一代，`VERSION_CODENAME` 的「只给上界」顾虑在这里不构成歧义 |
-| `uname -r` | `6.12.47+rpt-rpi-v7` | **32 位 v7 内核**，与 3B 是 BCM2837（ARMv8 但跑 32 位系统）相符 |
-| `ls /home` | 只有一个目录，**不是 `pi`** | 「不预置 `pi`」在本板成立；账户名由装机时设定（本文不写它） |
-| `systemctl is-enabled ssh` | `enabled` | SSH 开箱就在听 |
-| `ls /boot/firmware/` | 有 `bcm2708-rpi-b.dtb` 一批，**无 `ssh`、无 `userconf.txt`** | boot 分区是 Bookworm 起的 `/boot/firmware` 布局；**本板的 SSH 不是 boot 预置法开的**，而是装机时由 Imager/首启向导或 `raspi-config` 打开——官方那条「只放 `ssh` 不生效」的路径在本板没有留下痕迹 |
-
-两条附带实测，都属于「设备属性」而不是配置：
-
-- `ssh-keygen -l -f /etc/ssh/ssh_host_ed25519_key.pub`（对端自报主机键指纹）与电脑侧 `known_hosts` 所存逐字符一致——认脸的核对方法在 `rpi-ssh.md` 第四节，本文不复述。
-- `/var/log/auth.log` **读不到**（`tail` 报 `cannot open`）。这代 Raspbian 的认证记录只在 journald，`[待验证]` 「`/var/log/auth.log` 存在」的一切旧写法在本板都不成立。但本轮定因**没走** `journalctl`，走的是逐连接调试实例（`rpi-ssh.md` 第五节），所以这条只到「该路径不可用」，不到「journald 里能看到什么」。
-
-**「权限不对时 sshd 静默拒公钥」这条在本板仍未真正观察到**：`[板上实测]` 逐连接调试实例里 sshd 正常读到 `authorized_keys`、没有任何权限告警，那次失败的原因是**文件里的公钥内容与客户端那把不是同一把**（手打错的），不是权限。所以本节原来那句「权限不对→静默退回密码提示」仍是文档结论 `[待验证]`，只是它不再是首轮排障的头号嫌疑。
-
-
-另有一处**不是代际问题、是取舍**的分歧：用什么地址连。源文档主张 `ssh pi@raspberrypi.local`（依赖 mDNS），本文既有决策是「只用 IP」。这里不属未实测的技术分歧，而是取舍——mDNS 只是省得查 IP，它不保证可用（且 VPN 会改 DNS 后缀、可能拦多播，见「与 VPN 共存」）。因此文档与脚本一律写 IP，mDNS 名只作人工临时排查的便利手段，不进任何自动化调用。
+| 项 | 内容与读数 | 档 |
+| --- | --- | --- |
+| 代际与账户／SSH／boot 布局判据 | `PRETTY_NAME` → `Raspbian GNU/Linux 13 (trixie)`；`uname -r` → `6.12.47+rpt-rpi-v7`：Bookworm 之后一代，「只给上界」的顾虑在此不构成歧义、**32 位 v7 内核**与 BCM2837（ARMv8 跑 32 位系统）相符。`ls /home` → 只有一个目录、**不是 `pi`**（账户名装机设定，本文不写）；`systemctl is-enabled ssh` → `enabled`（SSH 开箱在听）；`ls /boot/firmware/` → 有 `bcm2708-rpi-b.dtb` 一批、**无 `ssh`、无 `userconf.txt`**：「不预置 `pi`」在本板成立；boot 分区是 Bookworm 起的 `/boot/firmware` 布局；**本板 SSH 不是 boot 预置法开的**，是装机时 Imager/首启向导或 `raspi-config` 打开——「只放 `ssh` 不生效」那条路径在本板没留痕迹 | `[板上实测]` |
+| 附带实测（设备属性不是配置） | `ssh-keygen -l -f /etc/ssh/ssh_host_ed25519_key.pub` 自报指纹与电脑侧 `known_hosts` 所存逐字符一致（认脸核对方法归 `rpi-ssh.md` 第四节）；`/var/log/auth.log` **读不到**（`tail` 报 `cannot open`）→ 这代 Raspbian 认证记录只在 journald，「auth.log 存在」的一切旧写法在本板都不成立 `[待验证]`；本轮定因没走 `journalctl`、走的是逐连接调试实例（`rpi-ssh.md` 第五节），所以这条只到「该路径不可用」，不到「journald 里能看到什么」 | `[板上实测]` |
+| 「权限不对→sshd 静默拒公钥」仍未观察到／地址取舍 | 调试实例里 sshd 正常读到 `authorized_keys`、无任何权限告警，那次失败实因是**文件里的公钥内容与客户端不是同一把**（手打错）不是权限 → 「权限不对→静默退回密码提示」仍是 `[待验证]`，只是不再是首轮排障头号嫌疑。用什么地址连是**取舍不是技术分歧**：mDNS 只省得查 IP、不保证可用（VPN 改 DNS 后缀、可能拦多播，见「与 VPN 共存」），文档与脚本一律写 IP，mDNS 名只作人工临时排查、不进自动化 | `[板上实测]`+`[待验证]` |
 
 ## 接口盘点
-
-- 板载以太网 `eth0`（3B 为 100M，经 USB 2.0 挂在 smsc95xx 上）。`[事实]`
-- 板载 WiFi `wlan0` 与蓝牙同在一片 combo 芯片，经 **SDIO** 接入，不占 USB 带宽；仅 2.4G（802.11n），无 5G。芯片型号有两种写法且都属官方：**产品页与 2016 发布稿写 BCM43438**（原文「BCM43438 wireless LAN and Bluetooth Low Energy (BLE) on board」），**Linux 驱动与固件文件名用 43430 一族**（Debian `firmware-brcm80211` 明确列有「BCM43430 NVRAM for the Raspberry Pi 3 B」，路径 `brcmfmac43430-sdio.raspberrypi,3-model-b.txt`）——写脚本匹配驱动时认 43430，谈硬件规格时认 43438，不是冲突。`[事实]`
-- 蓝牙为 4.1 **且带 BLE**：官方 3B 产品页与官方《Raspberry Pi product series explained》两处都明写 3B 有 Bluetooth Low Energy。3B+ 发布稿把「加入 BLE」当成相对 3B 的升级，是那句文案不严谨（3B+ 的实际变化是 4.2 与双频），不构成反证。`[事实]` 板上复核：`btmgmt -i hci0 info`。
-- 带宽归属：eth0 与 4 个 USB-A 口共享那条 USB 2.0 的 480M，插大容量 U 盘会拖慢**走有线**的 SSH；wlan0 走 SDIO，不受这条总线影响，主通道选 WiFi 后这类干扰基本不存在。`[事实]`
-- USB-C 口仅供电，无 OTG gadget，接电脑数据线不会出现 `usb0` 网卡。`[事实]`
-- 4 个 USB-A 口经内部 hub 引出，可接 USB 网卡或手机做 tethering（见上行链路第 4 项）。`[事实]`
+| 项 | 规格与坑 | 档 |
+| --- | --- | --- |
+| `eth0`／USB 口／`wlan0` | 板载以太网 3B 为 100M，经 USB 2.0 挂在 smsc95xx 上；4 个 USB-A 经内部 hub 引出，可接 USB 网卡或手机 tethering（上行链路第 4 项）；**USB-C 仅供电、无 OTG gadget**，接电脑数据线不会出现 `usb0` 网卡。`wlan0`：与蓝牙同在一片 combo 芯片、经 **SDIO** 接入不占 USB 带宽；仅 2.4G（802.11n）、无 5G。芯片名两种写法都属官方：产品页与 2016 发布稿写 **BCM43438**（原文「BCM43438 wireless LAN and Bluetooth Low Energy (BLE) on board」），Linux 驱动/固件文件名用 **43430** 一族（Debian `firmware-brcm80211` 列有「BCM43430 NVRAM for the Raspberry Pi 3 B」，路径 `brcmfmac43430-sdio.raspberrypi,3-model-b.txt`）——写脚本匹配驱动认 43430、谈硬件规格认 43438，不是冲突 | `[事实]` |
+| 蓝牙／带宽归属 | 蓝牙 4.1 **且带 BLE**（官方 3B 产品页与《product series explained》两处明写）；3B+ 发布稿把「加入 BLE」当升级是文案不严谨（实际变化是 4.2 与双频），不构成反证。板上复核：`btmgmt -i hci0 info`。eth0 与 4 个 USB-A 共享 USB 2.0 那条 480M：插大容量 U 盘会拖慢**走有线**的 SSH；wlan0 走 SDIO 不受这条总线影响——主通道选 WiFi 后此类干扰基本不存在 | `[事实]` |
 
 ## boot 分区配置文件（`config.txt` / `cmdline.txt`）
-
-两个文件都在 SD 卡的 boot 分区（FAT32，Windows 插卡即可直接读写），但**Linux 内路径因镜像代际而异**——这是最容易踩的坑，写死任一条都会在半数机器上失败。`[待验证]`
-
-| 系统版本 | config.txt | cmdline.txt |
-|---|---|---|
-| Bookworm / Trixie（较新） | `/boot/firmware/config.txt` | `/boot/firmware/cmdline.txt` |
-| Bullseye 及以前（较旧） | `/boot/config.txt` | `/boot/cmdline.txt` |
-
-不确定就先探测，不要按记忆写路径：
-
-```bash
-ls /boot/firmware/config.txt 2>/dev/null || ls /boot/config.txt
-```
-
-改前先备份，改坏能回退：
-
-```bash
-sudo cp /boot/firmware/config.txt /boot/firmware/config.txt.bak
-sudo cp /boot/firmware/cmdline.txt /boot/firmware/cmdline.txt.bak
-```
-
-`cmdline.txt` 是**一整行**，追加项用空格分隔，**不能换行**——换行会让内核参数解析失败、直接起不来。这两点决定了本文所有涉及 boot 配置的小节都适用同一套路径探测与备份动作。
+| 项 | 内容 | 档 |
+| --- | --- | --- |
+| 路径与探测／两条形态硬约束 | 两文件都在 SD 卡 boot 分区（FAT32，Windows 插卡即可直接读写），但**Linux 内路径因镜像代际而异**——最容易踩的坑，写死任一条都会在半数机器上失败。Bookworm/Trixie：`/boot/firmware/config.txt`、`/boot/firmware/cmdline.txt`；Bullseye 及以前：`/boot/config.txt`、`/boot/cmdline.txt`。不确定先探测、别按记忆写：`ls /boot/firmware/config.txt 2>/dev/null \|\| ls /boot/config.txt`；改前备份能回退：`sudo cp /boot/firmware/config.txt /boot/firmware/config.txt.bak` 与 `sudo cp /boot/firmware/cmdline.txt /boot/firmware/cmdline.txt.bak`。**硬约束**：`cmdline.txt` 是**一整行**，追加项空格分隔、**不能换行**——换行内核参数解析失败、直接起不来；改动只在开机时读一次、**必须重启**才生效。本文所有涉 boot 配置的小节共用这套探测与备份动作 | `[待验证]`（按代际）＋硬约束 |
 
 ## 取址：三条路径
-
-1. **DHCP，对端有服务**（家里路由器，或电脑开了 ICS）。默认配置即可，由 `dhcpcd` 或 NetworkManager 完成，附带网关和 DNS。
-2. **静态**。`[事实]` 不依赖任何 DHCP 服务，直连必可达；代价是网关和 DNS 要自己填对，否则「能连上但上不了网」。
-3. **DHCP 失败后的 link-local 兜底**。`[待验证]` 关键行为：3B 直连电脑且电脑没开 ICS 时，eth0 拿不到 lease，但仍可能自动获得 `169.254.x.x`，同时 Windows 那块网卡若为「自动获取」也会 APIPA 到 `169.254.x.x`，于是同一 `/16` 内**零配置就能 SSH**。这条路能不能通取决于镜像：
-   - dhcpcd 系（Bullseye 及之前）：IPv4LL 由 `/etc/dhcpcd.conf` 里的 `noipv4ll` 控制，该行被注释掉才启用；Raspberry Pi OS 通常注释掉它，即默认会落 link-local。
-   - NetworkManager 系（Bookworm 及之后）：`ipv4.method auto` 且 `ipv4.may-fail yes`（默认）时 DHCP 超时后会落 link-local；`ipv4.link-local` 的取值在新版本才可控。
-
-   本机实测方法：拔掉路由器、直连电脑、等 60 秒，`ip -4 a show eth0` 看是否有 `inet 169.254.`。主通道已选 WiFi，本项只在「路由器不在场又急需进 Pi」时才有价值，不排在关键路径上。
+| # | 路径 | 机制与代价 | 档 |
+| --- | --- | --- | --- |
+| 1／2 | DHCP（对端有服务：家里路由器或电脑开了 ICS）／静态 | ①默认配置即可，由 `dhcpcd` 或 NetworkManager 完成，附带网关和 DNS。②静态：不依赖任何 DHCP 服务，直连必可达；代价是网关和 DNS 要自己填对，否则「能连上但上不了网」 | `[事实]`（②）／—（①） |
+| 3 | DHCP 失败后的 link-local 兜底 | 3B 直连电脑且电脑没开 ICS 时 eth0 拿不到 lease，但仍可能自动落 `169.254.x.x`；Windows 那块网卡若为「自动获取」也 APIPA 到 `169.254.x.x`，同 `/16` **零配置就能 SSH**。能不能通取决于镜像：dhcpcd 系（Bullseye 前）由 `/etc/dhcpcd.conf` 的 `noipv4ll` 控制（该行被注释才启用；Raspberry Pi OS 通常注释掉，即默认落 link-local）；NM 系（Bookworm 后）`ipv4.method auto`＋`ipv4.may-fail yes`（默认）DHCP 超时后落 link-local，`ipv4.link-local` 新版本才可控。实测法：拔路由器直连电脑等 60 秒，`ip -4 a show eth0` 看有无 `inet 169.254.`。主通道已选 WiFi，本项只值「路由器不在场又急需进 Pi」，不排关键路径 | `[待验证]` |
 
 ## 上行链路选项（Pi 上网）
-
-控制链路与上行链路是两个独立维度，可用不同物理口，不必绑定。按可用性排：
-
-1. 网线接路由器：eth0 走 DHCP，最稳、延迟最低，百兆对 SSH 与烧录任务足够；代价是要拉线到路由器。`[事实]`
-2. WiFi 接路由器：wlan0，仅 2.4G，经 SDIO 不占 USB 带宽；省事但地址随 DHCP 变、抗干扰差。`[事实]`
-3. 网线直连电脑 + 电脑出口共享（ICS 或手工 NAT）：一根线同时解决控制与上网，电脑成为 Pi 唯一网关；脆弱点在电脑侧重启后配置丢失。`[待验证]`
-4. 安卓手机 USB tethering：手机接 Pi 的 USB-A 口并开「USB 网络共享」，Pi 侧出现 `usb0`，从 `192.168.42.x` 取址；无路由器也能上网，比手机热点稳。`[待验证]` 需内核带 `rndis_host`。
-5. 手机 WiFi 热点：与 2 同一芯片，属临时备选。
-6. Pi 自身做 AP（`hostapd` + `dnsmasq`，wlan0 发热点、eth0 接路由器做 WAN）：适合 Pi 装在现场、电脑到场即连，配置量最大。`[待验证]`
-
-硬约束：3B 只有一个 WiFi 芯片，「wlan0 连路由器上网」与「wlan0 发热点给电脑」不能同时成立（multi-VAP 在 brcmfmac 上不可靠）。`[待验证]` 主通道已定为方案 2（全走 WiFi）；方案 3/直连保留为救援，下一节的「双通道并存」届时才适用。
+| # | 方案 | 要点 | 档 |
+| --- | --- | --- | --- |
+| 1／2／3／4／5 | 网线接路由器／**WiFi 接路由器（已选定为主通道）**／网线直连电脑＋电脑出口共享（ICS 或手工 NAT）／安卓手机 USB tethering／手机 WiFi 热点 | 控制链路与上行链路是两个独立维度，可用不同物理口、不必绑定；按可用性排。① eth0 DHCP 最稳、延迟最低，百兆对 SSH 与烧录足够，代价是拉线到路由器。② wlan0 仅 2.4G、经 SDIO 不占 USB 带宽；省事，但地址随 DHCP 变、抗干扰差。③ 一根线同解控制与上网、电脑成 Pi 唯一网关，脆弱点在电脑重启后配置丢失（保留为救援）。④ 手机接 Pi 的 USB-A 口开「USB 网络共享」，Pi 侧出 `usb0`、从 `192.168.42.x` 取址，无路由器也能上网、比热点稳；需内核带 `rndis_host`。⑤ 与主通道同一芯片，临时备选 | `[事实]`（②）／`[待验证]`（③④） |
+| 6＋硬约束 | Pi 自身做 AP（`hostapd`+`dnsmasq`，wlan0 发热点、eth0 接路由器做 WAN）；3B 只有一个 WiFi 芯片 | 适合 Pi 装现场、电脑到场即连，配置量最大。**「wlan0 连路由器上网」与「wlan0 发热点给电脑」不能同时成立**（multi-VAP 在 brcmfmac 上不可靠）；方案 3/直连保留为救援，「双通道并存」届时才适用 | `[待验证]` |
 
 ## WiFi 通道（已选定为主通道）
-
-电脑与 Pi 同连一路由器，SSH 走 `wlan0`。eth0 直连和串口降为兜底。
-
-### 一次性配置
-
-`[板上实测]` **本板的网络命令都在，但经 SSH 直接敲会「找不到命令」**（2026-10-19）。起因是一次误判，值得整条记住：
-
-- 非交互 `ssh pi '<cmd>'` 的 PATH 实测就是四条：`/usr/local/bin:/usr/bin:/bin:/usr/games`——**不含 `/usr/sbin`**。
-- 于是 `command -v iw` 返回空，看着像「没装」。改用绝对路径复查，五个全在：`/usr/sbin/iw`、`/usr/sbin/iwconfig`、`/usr/sbin/rfkill`、`/usr/sbin/wpa_cli`、`/usr/sbin/ethtool`。**真的没装的只有 `tcpdump`**。
-- 判别规则：**网络类命令一律加 `sudo`（root 的 PATH 含 `/usr/sbin`）或直接写绝对路径**；`command not found` 在这条链路上第一优先怀疑 PATH，不要据此得出「本板缺工具」的结论，更不要因此去 `apt install` 已经在盘上的东西。
-
-链路层读数（`sudo` 后跑通，原样，SSID/BSSID 按敏感规则换成占位）：
-
-```
-$ sudo iw dev wlan0 link
-Connected to <路由器BSSID> (on wlan0)
-	SSID: <SSID>
-	freq: 2437.0
-	signal: -48 dBm
-	rx bitrate: 52.0 MBit/s
-	tx bitrate: 58.5 MBit/s
-$ sudo iw dev wlan0 get power_save
-Power save: on
-$ sudo rfkill list all
-0: hci0: Bluetooth → Soft blocked: yes / Hard blocked: no
-1: phy0: Wireless LAN → Soft blocked: no / Hard blocked: no
-```
-
-- **`Power save: on` 是这条链路上目前唯一抓到的正向嫌疑**：下面「首轮 WiFi 观察」那节列的三个候选里，第 ③ 个（省电模式没关）不是「未验」而是**实测为开着**。因果仍未证，但关掉它是零成本的，见那节的处置。
-- 信号 **-48 dBm**、信道 6（2437 MHz）、速率 52/58.5 Mbit/s → 距离与协商都不差，「信号弱导致掉线」这一支基本可以放下。
-- 蓝牙 **Soft blocked: yes**（软关，本板没在用蓝牙，所以下面那条「3B 经典蓝牙抢 2.4G 天线压吞吐」的风险在当前配置下不成立——它已被关掉。注意这是 rfkill 层的软关，不是 `dtoverlay=disable-bt` 那种彻底摘掉，驱动仍在、重启后是否保持未验）。
-- nmcli 侧同一份读数的替代写法（不需要 `sudo`，PATH 里有）：`nmcli -f GENERAL.STATE,AP device show wlan0` 打出 `GENERAL.STATE: 100 (connected)` 和 `AP[1].SSID/BSSID/MODE/CHAN/RATE/SIGNAL`。⚠️ nmcli 的 `SIGNAL=75` 是它自己的 **0–100 质量刻度，不是 dBm**（dBm 恒为负；`dev wifi list` 与 `device show` 两处读数一致），要与 `iw` 的 -48 dBm 对照时别混单位。
-- `GENERAL.CONNECTION` 实测为 **`netplan-wlan0-<SSID>`**，`/etc/netplan/` 下另有两份 `90-NM-<uuid>.yaml`，nmcli 版本 **1.52.1** → 本板的 WiFi 是 **netplan 与 NetworkManager 共管**。⚠️ 因此下面那些 `nmcli con mod` 的改动到底会不会写进 netplan 那两份 yaml，**本轮没验**（没做过任何修改）；要证的时机就是真改 powersave 之后：改完 `ls -l --time-style=full-iso /etc/netplan` 看 mtime 是否跟着动，再 `reboot` 复读 `sudo iw dev wlan0 get power_save` 是否仍为 `off`。在此之前不要把「nmcli 改了就一定落盘」当既成事实写进别的文档。
-
-- `[待验证]` **先设国家码**，再谈连接：`sudo raspi-config` → Localisation Options → WiFi country 设为 `CN`。未设时 brcmfmac 以 `country 00` 运行，可用信道受限，若路由器固定在信道 12/13，Pi 会**完全扫不到**这个 SSID——这是最容易被忽略的「扫不到」成因。`[板上实测]` 2026-10-19 本板关联在**信道 6**（`sudo iw dev wlan0 link` → `freq: 2437.0`），落在常规信道上，所以这一条在本板不是当前故障的候选。
-- 已连接后看细节首选 `sudo iw dev wlan0 link`（`signal` 给 dBm，见上）；不想用 sudo 就用上一条的 nmcli 写法。
-- 连接：`sudo nmcli dev wifi connect "<SSID>" password "<密码>"`。一条命令即写入 keyfile，重启保留。
-- `[待验证]` 关掉 WiFi 省电模式，否则长任务里会出现首个 SSH 包延迟几百毫秒、以及空闲后掉线再重连：
-  `sudo nmcli con mod "<SSID>" 802-11-wireless.powersave 2`（值 2 = disable）。**两层断言本板都能读了**（前文的 PATH 结论）：配置层 `nmcli -f 802-11-wireless.powersave con show "<SSID>"` 应为 `2`；运行时层 `sudo iw dev wlan0 get power_save` 应为 `Power save: off`。`[板上实测]` 2026-10-19 未改动前实测为 **`on`**——这条 `[待验证]` 的**前提成立**，改法与生效验证仍待做一次。
-- `[待验证]` 关掉随机 MAC，否则路由器侧的 MAC 地址绑定永远不生效、地址看起来随机变化：
-  `sudo nmcli con mod "<SSID>" wifi.cloned-mac-address permanent`，以及 `wifi.scan-rand-mac-address no`。
-  `[板上实测]` 2026-10-19 属性名这条要打个折：本板 nmcli **1.52.1** 把 `802-11-wireless` 的全部属性列出来（`nmcli -t con show "<SSID>" 802-11-wireless`），里面**只有 `mac-address-randomization`，没有 `scan-rand-mac-address`**；`nmcli -f 802-11-wireless.scan-rand-mac-address con show …` 直接报 `invalid field`。本板当前读数：`802-11-wireless.cloned-mac-address: --`、`802-11-wireless.mac-address-randomization: default`。所以回读命令应写成 `nmcli -f 802-11-wireless.cloned-mac-address,802-11-wireless.mac-address-randomization con show "<SSID>"`；`wifi.scan-rand-mac-address no` 这条 mod 在本板**是否能被接受未试过**（属改动，留给用户决定），别照抄就以为一定生效。
-- `[待验证]` 3B 的 WiFi 与蓝牙共用那片 combo 芯片（规格名 BCM43438，驱动名 43430）和同一条天线，经典蓝牙（尤其音频/串口透传）会通过 TDM 仲裁严重压制 2.4G 吞吐。不用蓝牙就彻底关掉：`/boot/firmware/config.txt` 加 `dtoverlay=disable-bt` 后重启，比只 stop 服务干净。注意这条与串口使能相互牵连——关掉蓝牙会腾出 PL011，见「串口控制台」的使能段，叠加后的行为未实测。
-
-### 地址固定（让电脑有个不变的目标）
-
-两种方式，选一种，不要混：
-
-- 路由器侧绑定：在路由器把 Pi 的 MAC 绑成固定租约。Pi 零改动、仍是 DHCP，推荐首选。MAC 用 `ip link show wlan0` 读真实值（不是随机 MAC）。
-- Pi 侧静态：
-
-  ```bash
-  sudo nmcli con mod "<SSID>" ipv4.method manual ipv4.addresses 192.168.1.50/24 \
-    ipv4.gateway 192.168.1.1 ipv4.dns "223.5.5.5 119.29.29.29" ipv4.ignore-auto-dns yes
-  ```
-
-  多值分隔已按官方手册**裁决为空格（并加引号）**：NetworkManager 自带手册 nmcli-examples(7) 的「Adding an ethernet connection profile with manual IP configuration」一例写的就是 `nmcli con mod my-con-em1 ipv4.dns "8.8.8.8 8.8.4.4"`，同例还给出一条只加一个地址的追加式写法 `nmcli con mod my-con-em1 +ipv4.dns 1.2.3.4`。
-  原先并存的逗号写法不再进命令：官方属性参考 nm-settings-nmcli(5) 只在 `ipv4.addresses` 上明写「Multiple addresses can be separated by comma」，`ipv4.dns` 的属性描述只说 "Array of DNS servers"、没有给分隔符，所以逗号在 dns 上没有文档依据（`ipv4.addresses` 用逗号倒是有依据，两个属性的写法因此并不统一，别相互照抄）。
-  这仍是手册结论而非板上结果 `[待验证]`：执行后回读断言两个地址都在，`nmcli -f ipv4.dns,ipv4.addresses,ipv4.gateway con show "<SSID>"`。若空格写法只落进一个地址，改逐条追加 `+ipv4.dns`，并把实测结果记回本节。
-- 填错网关或 DNS 的表现是「SSH 通但 apt 失败」，与链路本身无关，别去查 WiFi。
-
-### 首轮 WiFi 观察：一次约 40 秒的整体不可达，**根因未定**
-
-`[板上实测]` 观察口径要写清楚：下面这批数据是**从电脑侧对板子的地址取样**得到的（板子当时已能免密登录，所以「SSH 通」可直接当链路判据），属电脑侧观察 + 板上取数混合，不是板子自己记录的日志。
-
-- 一次发作：同一进程内 ICMP 与 TCP 22 同刻对照循环里，`23:00:25 → 23:01:05` 连续 5 次**两路全失败**（约 40 秒），随后 `23:01:15 → 23:02:21` 恢复，其间只有 `23:01:36` 出现**一次 ICMP 丢而 TCP 仍通**。→ 「整机消失」与「丢一个包」是两种现象，别混成一条。
-- 发作后 3 分钟的 ARP 观察器：**36/36 全通**，绑定始终是同一个 MAC ↔ 同一个地址，**没换过址**。→ 那 40 秒里不是 DHCP 换址（至少这次没抓到第二次发作）。
-- 板上侧同时取回：`vcgencmd get_throttled` → **`0x50000`** =  bit16「开机以来发生过欠压」+ bit18「发生过限频」，低四位为 0 即**此刻没在限**；`vcgencmd measure_temp` → `36.5'C`；`dmesg | grep -icE 'under-voltage|brcmf.*error'` → **0**（`dmesg` 在本板非 root 也可读，已另行确认，所以这个 0 不是读不到造成的假阴性）。
-- 地址形态：`ip -4 addr show wlan0` → `/23`、`dynamic`，即 DHCP 且网段比 `/24` 宽，`arp -a` 里同段还有路由器与其它设备，**不是**板子自己编的地址。
-
-`[板上实测]` 2026-10-19 复测补了两条，候选的排序因此变了：
-
-- **重启复测否掉了「历史记录」这一解释**：`sudo shutdown -r now`（01:07:30）之后约 46 秒、板子空载刚起，`get_throttled` 已经是 `0x50000`，起后 2 分钟、9 分钟两次复读都还是它。→ 欠压是**当下正在发生**的，不是上一次长跑留下的锁存记录（详见 [`rpi-3b-hardware.md`](../hardware/rpi-3b-hardware.md) 第 4.1 节）。这加重了候选 ①，但仍**没有**任何一条内核日志把欠压和这次 40 秒连起来（`dmesg` 里 `under-voltage|brcmf.*error` 计数为 0）。
-- **候选 ③ 由「未验」升为「实测成立的前提」**：`sudo iw dev wlan0 get power_save` → **`Power save: on`**，且连接侧 `802-11-wireless.powersave` 是 `0 (default)`（等于没管）。注意本板 `iw` 在 `/usr/sbin`，裸敲会 `command not found`，必须带 `sudo`——本节上面那句「本轮没跑」就是因为这个 PATH 坑误判成工具缺失，现已跑通。省电开着**恰好**是本节上面那条 `[待验证]` 描述的「空闲后掉线再重连」的成因前提，所以三个候选里它现在是唯一有正向读数的。
-- 顺带读了链路质量：`signal: -48 dBm`、信道 6、`rx/tx bitrate 52/58.5 MBit/s`、`wpa_cli status` → `wpa_state=COMPLETED`、`rfkill` WiFi 未软关。→ 「信号差 / 被软阻塞 / 没关联上」三条基本可以放下。
-- ⚠️ 有一条**取证时机没抓住，别当成做过**：发作的时刻没法预知，`journalctl` 只能在事后回看**那一个开机段**——本板 01:07 重启过一次，而 40 秒那次发作发生在**重启之前**，所以重启后的 journald 里根本没有那次发作的记录（`journalctl -b` 只覆盖当前 boot）。要看关联层日志，只有两条路：① 从现在起等下一次发作，发作后**不要再重启**，立刻 `journalctl -b | grep -iE 'wlan0|brcmf|deauth|roam'`；② 加一个后台取样器（板侧每秒记 `iw ... link` 与 `ping -c1 <网关>` 到文件），下次发作自动落盘。要不要走 ② 由用户定，本轮没有起任何常驻探针。
-
-**处置建议（按成本排序，均未执行，等用户点头）**：① 先换电源/换线，重启后读 `get_throttled` 应回到 `0x0`，同时观察不可达是否还发作——一次动作同时检验候选 ①；② 关掉 WiFi 省电：`sudo nmcli con mod "netplan-wlan0-<SSID>" 802-11-wireless.powersave 2`，回读 `sudo iw dev wlan0 get power_save` 应为 `off`（改完是否写回 netplan 见本节开头那条未验事项）；③ 若前两条都做了仍发作，才轮到 2.4G 重关联与路由器侧（信道、双频合一、DHCP 租约）。
-
-另记一条与本节无关但会影响后续所有实测的：`[板上实测]` `/var/log/auth.log` 在本板不可用（见「首轮板上基线」），凡文档里靠读该文件排障的写法都要换成 `journalctl`。
-
-### 排障（WiFi 专有，接在「排障顺序」的链路层之前）
-
-- `rfkill list all` → 若有 `Soft blocked: yes` 则 `rfkill unblock wifi`。`[板上实测]` 2026-10-19：**必须写成 `sudo rfkill list all`**——`rfkill` 在 `/usr/sbin`，而经 SSH 的非交互 PATH 不含该目录，裸敲 `rfkill` 会 `command not found`（见本节开头的 PATH 实测）。本板读数：WiFi `Soft blocked: no`（没有被软关，这条排障对本板不成立），反倒是**蓝牙** `hci0: Soft blocked: yes`。不想用 sudo 时 `nmcli radio wifi` 也能读 `enabled/disabled`，但它只给总开关、给不出 hard/soft 两种阻塞的区分。
-- `sudo systemctl status NetworkManager wpa_supplicant` 与 `journalctl -u wpa_supplicant --no-pager | tail -30`；关联是否成功看 `wpa_cli status` 的 `wpa_state`，只有 `COMPLETED` 算过，停在 `SCANNING` 是找不到网络（信道/国家码），停在 `AUTHENTICATING` 或 `4WAY_HANDSHAKE` 多为密码错或加密不匹配（`[待验证]` 路由器设为仅 WPA3-SAE 时，3B 这代 43430/43438 芯片未必能关联，先在路由器上放开 WPA2/WPA3 混合模式再试）。
-- `dmesg | grep -i brcmfmac` → 驱动枚举失败通常是供电不足或 SDIO 问题，与配置无关。
-- 分频段确认：3B 无 5G，路由器若开了「双频合一」且 Pi 被挤到弱信号侧，可在路由器上把 2.4G 单独命名以便强制连接。
+| 项 | 命令／读数／判读 | 档 |
+| --- | --- | --- |
+| 主通道口径＋PATH 坑（先记住再跑命令） | 电脑与 Pi 同连一路由器，控制与上网全走 `wlan0`；eth0 直连和串口降为兜底。非交互 `ssh pi '<cmd>'` 的 PATH 实测只有四条：`/usr/local/bin:/usr/bin:/bin:/usr/games`，**不含 `/usr/sbin`** → `command -v iw` 返回空**不等于没装**：绝对路径复查，`/usr/sbin/iw`、`iwconfig`、`rfkill`、`wpa_cli`、`ethtool` 全在，真的没装的只有 `tcpdump`。**规则：网络类命令一律加 `sudo`（root 的 PATH 含 `/usr/sbin`）或直接写绝对路径；`command not found` 在这条链路上第一优先怀疑 PATH**，不要据此得出「本板缺工具」、更不要 `apt install` 已在盘上的东西 | `[板上实测]` 2026-10-19 |
+| 链路层读数（SSID/BSSID 按敏感规则占位）／nmcli 替代读数（免 sudo） | `sudo iw dev wlan0 link` → `Connected to <路由器BSSID>`、`SSID: <SSID>`、`freq: 2437.0`、`signal: -48 dBm`、`rx bitrate: 52.0 / tx bitrate: 58.5 MBit/s`；`sudo iw dev wlan0 get power_save` → **`Power save: on`**；`sudo rfkill list all` → `hci0: Bluetooth Soft blocked: yes / Hard blocked: no`、`phy0: Wireless LAN Soft blocked: no / Hard blocked: no`；`wpa_cli status` → `wpa_state=COMPLETED`。判读：−48 dBm、信道 6、52/58.5 → 距离与协商都不差，「信号弱掉线／没关联／被软阻塞」三支基本放下。免 sudo：`nmcli -f GENERAL.STATE,AP device show wlan0` → `GENERAL.STATE: 100 (connected)` 与 `AP[1].SSID/BSSID/MODE/CHAN/RATE/SIGNAL`。⚠️ `SIGNAL=75` 是 **0–100 质量刻度不是 dBm**（dBm 恒为负；`dev wifi list` 与 `device show` 两处一致），与 `iw` 的 −48 dBm 对照别混单位 | `[板上实测]` |
+| 省电 `on`＝目前唯一正向嫌疑／关 WiFi 省电／netplan 与 NM 共管 | 「40 秒不可达」三个候选里，第 ③ 个（省电没关）不是未验而是**实测开着**；因果未证，但关掉零成本。改法（症状：首个 SSH 包延迟几百毫秒、空闲后掉线重连）：`sudo nmcli con mod "<SSID>" 802-11-wireless.powersave 2`（值 2=disable）。断言分两层：配置层 `nmcli -f 802-11-wireless.powersave con show "<SSID>"` 应为 `2`；运行时层 `sudo iw dev wlan0 get power_save` 应为 `Power save: off`。改动前实测为 `on`、连接侧 `powersave 0 (default)` → **这条 `[待验证]` 的前提成立**，改法与生效验证仍待做一次。共管：`GENERAL.CONNECTION` 实测为 `netplan-wlan0-<SSID>`；`/etc/netplan/` 下另有两份 `90-NM-<uuid>.yaml`；nmcli **1.52.1** → 本板 WiFi 由 **netplan 与 NetworkManager 共管**。`nmcli con mod` 的改动会不会写进那两份 yaml **本轮没验**（没做任何修改）；要证的时机是真改 powersave 之后：改完 `ls -l --time-style=full-iso /etc/netplan` 看 mtime 是否跟着动，再 `reboot` 复读 `sudo iw dev wlan0 get power_save` 是否仍 `off`。在此之前不要把「nmcli 改了就一定落盘」当既成事实写进别的文档 | `[板上实测]`+`[待验证]` |
+| 蓝牙共天线／先设国家码再谈连接 | hci0 `Soft blocked: yes`（软关）→「经典蓝牙抢 2.4G 天线压吞吐」在**当前配置下不成立**；但这是 rfkill 软关、不是 `dtoverlay=disable-bt` 那种彻底摘掉，驱动仍在、重启后是否保持未验。芯片规格名 BCM43438/驱动名 43430 与同一条天线：经典蓝牙（尤其音频/串口透传）经 TDM 仲裁严重压制 2.4G 吞吐——不用蓝牙就 config.txt 加 `dtoverlay=disable-bt` 后重启、比只 stop 服务干净；**与串口使能相互牵连**（腾出 PL011，见「串口控制台」），叠加行为未实测。国家码：`sudo raspi-config` → Localisation Options → WiFi country 设 `CN`；未设时 brcmfmac 以 `country 00` 运行、可用信道受限；路由器固定在信道 12/13 时 Pi 会**完全扫不到**该 SSID——最易忽略的「扫不到」成因。本板实测关联在**信道 6**（`freq: 2437.0`）且 cmdline 带 `cfg80211.ieee80211_regdom=CN` → 在本板不是当前故障候选 | `[板上实测]`+`[待验证]` |
+| 连接与看细节／关随机 MAC | 连接：`sudo nmcli dev wifi connect "<SSID>" password "<密码>"`——一条命令即写入 keyfile、重启保留。已连接后看细节首选 `sudo iw dev wlan0 link`（`signal` 给 dBm）；不想 sudo 用上面的 nmcli 写法。关随机 MAC（症状：路由器侧 MAC 绑定永不生效、地址看着随机变）：旧写法 `sudo nmcli con mod "<SSID>" wifi.cloned-mac-address permanent` 及 `wifi.scan-rand-mac-address no`。属性名打折：本板 nmcli 1.52.1 的 `802-11-wireless` 全属性清单里**只有 `mac-address-randomization`、没有 `scan-rand-mac-address`**（`nmcli -f 802-11-wireless.scan-rand-mac-address` 直接报 `invalid field`）；当前读数 `cloned-mac-address: --`、`mac-address-randomization: default`；回读应写 `nmcli -f 802-11-wireless.cloned-mac-address,802-11-wireless.mac-address-randomization con show "<SSID>"`；那条 `mod` 在本板**能否被接受未试过**（属改动，留给用户决定），别照抄就当生效 | 命令＋`[待验证]`+`[板上实测]` |
+| 地址固定（两法选一，不要混） | **路由器侧绑定（推荐首选）**：路由器把 Pi 的 MAC 绑固定租约，Pi 零改动仍 DHCP；MAC 用 `ip link show wlan0` 读真实值（不是随机 MAC）。**Pi 侧静态**：`sudo nmcli con mod "<SSID>" ipv4.method manual ipv4.addresses 192.168.1.50/24 ipv4.gateway 192.168.1.1 ipv4.dns "223.5.5.5 119.29.29.29" ipv4.ignore-auto-dns yes`——多值分隔已按官方手册**裁决为空格并加引号**（nmcli-examples(7)「manual IP configuration」例为 `ipv4.dns "8.8.8.8 8.8.4.4"`，另给追加式 `+ipv4.dns 1.2.3.4`；nm-settings-nmcli(5) 只在 `ipv4.addresses` 明写逗号可分、`ipv4.dns` 只说 "Array of DNS servers" 没给分隔符——逗号对 dns 无文档依据，两属性写法不统一、别互抄）。执行后回读断言两个地址都在：`nmcli -f ipv4.dns,ipv4.addresses,ipv4.gateway con show "<SSID>"`；若空格只落一个地址，改逐条 `+ipv4.dns` 并把实测记回本节。仍是手册结论。填错网关/DNS 的表现是「SSH 通但 apt 失败」，与链路无关、别去查 WiFi | `[待验证]` |
+| 首轮观察：一次约 40 秒整体不可达，**根因未定**／板上侧读数与重启复测 | 口径：从电脑侧对板子地址取样——当时已免密可登，「SSH 通」直接当链路判据；电脑侧观察＋板上取数混合，不是板子自己的日志。发作：同一进程内 ICMP 与 TCP 22 同刻对照循环，`23:00:25→23:01:05` 连续 5 次**两路全失败**（约 40 秒），`23:01:15→23:02:21` 恢复，其间仅 `23:01:36` **一次 ICMP 丢而 TCP 仍通** → 「整机消失」与「丢一个包」是两种现象，别混成一条。发作后 3 分钟 ARP 观察器 **36/36 全通**、绑定始终同一 MAC↔同一地址没换过 → 那 40 秒不是 DHCP 换址（至少这次没抓到第二次发作）。地址形态：`ip -4 addr show wlan0` → `/23`、`dynamic`（DHCP、比 `/24` 宽，`arp -a` 同段有路由器与其它设备，**不是**板子自己编的）。板上读数：`vcgencmd get_throttled` → **`0x50000`**＝bit16「开机以来发生过欠压」＋bit18「发生过限频」、低四位 0 即**此刻没在限**；`vcgencmd measure_temp` → `36.5'C`；`dmesg \| grep -icE 'under-voltage\|brcmf.*error'` → **0**（`dmesg` 本板非 root 也可读，已另行确认，这个 0 不是读不到的假阴性）。复测：`sudo shutdown -r now`（01:07:30）后约 46 秒、空载刚起 `get_throttled` 已是 `0x50000`，起后 2 分钟、9 分钟复读都还是它 → 欠压是**当下正在发生**、不是上次长跑的锁存（详见 [`rpi-3b-hardware.md`](../hardware/rpi-3b-hardware.md) §4.1），加重候选 ①；但**没有任何一条内核日志把欠压和这 40 秒连起来**。候选 ③（省电）由「未验」升为**实测成立的前提**——`Power save: on` 恰好是那条 `[待验证]` 描述的「空闲后掉线再重连」的成因前提，三个候选里唯一有正向读数的 | `[板上实测]` |
+| 取证时机（有一条没抓住，别当成做过）／处置建议（按成本排序，**均未执行、等用户点头**） | 发作不可预知，`journalctl` 只能事后回看**当前 boot 段**：本板 01:07 重启过，而 40 秒发作在**重启之前** → 重启后的 journald 没有那次记录（`journalctl -b` 只覆盖当前 boot；拿记忆里「上次发作时刻」查 `--since` 查的是未来窗口，`-- No entries --` 不构成任何证据）。要看关联日志两条路：① 等下一次发作，发作后**不要再重启**、立刻 `journalctl -b \| grep -iE 'wlan0\|brcmf\|deauth\|roam'`；② 板侧加后台取样器（每秒记 `iw ... link` 与 `ping -c1 <网关>` 到文件）。走不走 ② 由用户定，**本轮没有起任何常驻探针**。处置：① 先换电源/换线：重启后 `get_throttled` 应回 `0x0`、同时观察不可达是否还发作——一次动作同时检验候选 ①；② 关 WiFi 省电：`sudo nmcli con mod "netplan-wlan0-<SSID>" 802-11-wireless.powersave 2`，回读 `sudo iw dev wlan0 get power_save` 应为 `off`（改完是否写回 netplan 见共管行）；③ 前两条都做了仍发作，才轮到 2.4G 重关联与路由器侧（信道、双频合一、DHCP 租约）。另记：`/var/log/auth.log` 本板不可用，凡靠它排障的写法都换 `journalctl` | `[板上实测]`＋`[待验证]`（未执行） |
+| WiFi 排障（接在「排障顺序」链路层之前） | `rfkill list all` 有 `Soft blocked: yes` 就 `rfkill unblock wifi`——**必须写 `sudo rfkill list all`**（PATH 坑见首行；本板 WiFi `no`，此步对本板不成立，反倒是蓝牙 `yes`）；免 sudo 时 `nmcli radio wifi` 只给总开关、分不出 hard/soft。`sudo systemctl status NetworkManager wpa_supplicant`、`journalctl -u wpa_supplicant --no-pager \| tail -30`；关联看 `wpa_cli status` 的 `wpa_state`：只有 `COMPLETED` 算过，停 `SCANNING`＝找不到网络（信道/国家码），停 `AUTHENTICATING`/`4WAY_HANDSHAKE`＝多密码错或加密不匹配。`dmesg \| grep -i brcmfmac` → 驱动枚举失败通常是供电不足或 SDIO 问题、与配置无关。3B 无 5G：路由器「双频合一」把 Pi 挤到弱信号侧时，在路由器把 2.4G 单独命名强制连接。`[待验证]` 路由器仅 WPA3-SAE 时 3B 这代 43430/43438 未必能关联，先在路由器放开 WPA2/WPA3 混合模式再试 | `[板上实测]`+`[待验证]` |
 
 ## 双通道并存时的路由与 DNS
-
-典型形态：eth0 静态 `10.99.0.2/24`（只服务直连，不上外网）+ wlan0 DHCP（上外网）。`[待验证]`
-
-- `[事实]` 默认路由必须由 wlan0 提供。eth0 侧**不要配网关**；一旦 eth0 也填了网关，就会和 wlan0 抢默认出口，或把出网流量丢给没上游的对端。
-- `[事实]` 到 `10.99.0.1` 的报文命中 eth0 那条 `/24` 网段路由，与默认路由无关，所以直连和上网互不干扰。
-- DNS：eth0 静态时若不设 `ipv4.ignore-auto-dns`，接口上的 DNS 会合并进解析链；wlan0 的 DHCP DNS 优先度由 metric 决定。排查时用 `resolvectl status` 看每个链路的服务端，别只看 `/etc/resolv.conf`（可能是 stub 转发）。
-- `[事实]` 直连网段选 `10.99.0.0/24` 这类家庭路由器和常见 VPN 都不用的区间，减少撞车。
+| 断言 | 内容 | 档 |
+| --- | --- | --- |
+| 典型形态与默认路由／DNS 与选段 | 【形态】eth0 静态 `10.99.0.2/24`（只服务直连、不上外网）＋ wlan0 DHCP（上外网）`[待验证]`。**默认路由必须由 wlan0 提供**：eth0 侧**不要配网关**——eth0 一填就与 wlan0 抢默认出口，或把出网流量丢给没上游的对端 `[事实]`；到 `10.99.0.1` 的报文命中 eth0 那条 `/24` 网段路由、与默认路由无关，直连和上网互不干扰 `[事实]`。【DNS 与选段】eth0 静态不设 `ipv4.ignore-auto-dns` 时接口 DNS 会合并进解析链；wlan0 的 DHCP DNS 优先度由 metric 决定；排查用 `resolvectl status` 看每链路的服务端，别只看 `/etc/resolv.conf`（可能是 stub 转发）。直连网段选 `10.99.0.0/24` 这类家庭路由器和常见 VPN 都不用的区间，减少撞车 `[事实]` | `[事实]`+`[待验证]`＋判读 |
 
 ## 显示输出与无头模式
-
-不接显示器时 Pi 完全正常工作（headless 是天生能力），显示行为全部可事后调整，且**改动都可逆**——删掉加的那几行即恢复原状，不需要重烧镜像。`[待验证]`
-
-### config.txt 显示项
-
-| 配置项 | 作用 | 备注 |
-|---|---|---|
-| `hdmi_force_hotplug=1` | 没插线也当作已接显示 | 接屏后分辨率认不对、或无头跑图形栈时用 |
-| `hdmi_group=2` + `hdmi_mode=16` | 强制分辨率 | group 2 = DMT，`16` = 1920×1080@60 |
-| `framebuffer_width=1920` / `framebuffer_height=1080` | 固定 framebuffer 尺寸 | 无头截图、无头浏览器需要知道「虚拟屏幕」多大 |
-| `disable_overscan=1` | 去黑边 | 画面不铺满时用 |
-| `hdmi_drive=2` | 强制 HDMI 输出（含音频） | 来自 `rpi-display-headless.md`，长线缆或画质/音频异常时试；与 `hdmi_group/hdmi_mode` 是两个维度，别混 |
-| `gpu_mem=128` | GPU 显存（MB） | 默认值按**内存容量**而非机型：<1 GB 为 `64`，≥1 GB 为 `76`（3B 是 1 GB，故默认 `76`）。调低给 CPU 腾内存，调高适合 GPU 负载；官方明确警告 VideoCore 架构下调高无性能收益、反而可能有害，Pi 5 起本项无效 |
-| `hdmi_ignore_hotplug=1` | 假装没接显示器，**禁用 HDMI 输出** | 「永久不要 HDMI」的正解；官方原文：HDMI output will therefore be disabled, even if a monitor is connected。与上一行互为反向，同时写会相互抵消 |
-| `sdtv_mode=2` | 复合视频制式（3B 这代） | 默认 `0` = NTSC，`2` = PAL；配套键 `sdtv_aspect`（默认 `1` = 4:3）、`sdtv_disable_colourburst`。3B 的复合视频**默认可用**，见下面的核对结论 |
-| `enable_uart=1` | 使能串口控制台 | 见下一节，与显示无关但同在 config.txt |
-
-改动只在开机时读一次，**必须重启**才生效。
-
-表内每条的作用与取值已对官方手册核对过（见下一节），但**没有一条经过板上实测**，整表仍属 `[待验证]`。「没插线也当作已接显示」用 `hdmi_force_hotplug=1`，「禁用 HDMI」用 `hdmi_ignore_hotplug=1`——源文档里那行 `hdmi=0` 不是合法键名，已弃用。
-
-### 手册核对结论（2026-10-15，只查文档，未上板）
-
-权威源只用两处：Raspberry Pi 官方文档（config.txt 页与 Legacy config.txt 页），以及 NetworkManager 自带的手册页源文件。以下结论是**文档核对**，不是实机测量；`[待验证]` 保留给板上行为。
-
-| # | 原存疑说法 | 结论 | 出处（站点 + 页/小节） |
-|---|---|---|---|
-| 1 | `hdmi=0` 用于永久禁用 HDMI | **键不存在，已弃用**。config.txt 与 Legacy config.txt 两页的键名列表里都没有裸 `hdmi` 键，`hdmi=0` 全文零命中。这一需求由 `hdmi_ignore_hotplug=1` 承担；反向需求（无头当作接了屏）由 `hdmi_force_hotplug=1` 承担 | Raspberry Pi 官方文档 *Legacy config.txt options → Legacy video options* 的 `hdmi_ignore_hotplug`、`hdmi_force_hotplug` |
-| 2 | `enable_tvout=1` 在 3B 上启用复合视频，且与 HDMI 硬件互斥 | **机型判断与源文档相反：3B 上这一项默认就是 `1`，不是需要打开的开关**。官方默认值表：Pi 4B 起的旗舰机型、CM4 起的计算模块、键盘机型默认 `0`，**其他所有机型默认 `1`**（3B 属后者，复合视频走板边 3.5mm AV 孔）。「启用复合会禁用 HDMI」以及 `enable_tvout` + `dtoverlay=vc4-kms-v3d,composite` + `vc4.tv_norm=` 那一整套是较新机型（KMS 路径）的说明；3B 这代的复合视频参数是 `sdtv_mode`/`sdtv_aspect`/`sdtv_disable_colourburst` | 官方文档 *config.txt → Video options → Composite video mode → `enable_tvout`*（含默认值表）；*Legacy video options → `sdtv_mode`* |
-| 3 | 3B 默认不启用 KMS（`vc4-kms-v3d`），Pi 4/400/5 才默认启用 | **官方文档没有给出按机型的 KMS 默认值，此条无法由手册裁决**，维持 `[待验证]`。查过的范围：config.txt 全部分节、Legacy config.txt 全部分节、*Configuration → Display/audio* 、*raspi-config* 页——均无「哪代机型默认启用哪条 dtoverlay」的陈述。唯一相邻的官方限定是 Legacy 页 HDMI 小节的 IMPORTANT：用 VC4 KMS 时整条显示链由 Linux 接管、那些 `hdmi_*` 旧键只对 legacy FKMS 与固件驱动生效——它恰好依赖本条要实测的结果（这台 3B 走的是哪条图形驱动路径），不能反过来当结论用 | 无结论；判据见下面的板上清单 |
-| 4 | `gpu_mem` 默认 `76` | **数值成立，但依据是内存容量而不是机型**：官方写「<1 GB 的机型默认 `64`，1 GB 及以上默认 `76`」，3B 恰好 1 GB，所以 `76`。附带两条：官方强调 VideoCore 下调高无性能收益、可能有害；Pi 5 起该组参数无效 | 官方文档 *Legacy config.txt options → Legacy memory options → `gpu_mem`* |
-
-核对用的具体页面（raspberrypi.com 的发布页对本机返回 403，改从官方仓库取同一份源文件逐条比对，内容与发布页同源）：
-
-- `raspberrypi/documentation` → `documentation/asciidoc/computers/legacy_config_txt/video.adoc`（发布页 raspberrypi.com/documentation/computers/legacy_config_txt.html 的 Legacy video options 一节；`hdmi_ignore_hotplug`、`hdmi_force_hotplug`、`sdtv_mode` 在此）
-- 同目录 `legacy_config_txt/memory.adoc`（Legacy memory options → `gpu_mem`）
-- 同目录 `config_txt/video.adoc`（config.txt → Video options → Composite video mode → `enable_tvout`，含机型默认值表）
-- 同目录 `config_txt/what_is_config_txt.adoc`（boot 分区路径 `/boot/firmware/`、改动只在重启后生效、`vcgencmd get_config int|str`、以及「部分 legacy 选项不再官方支持」的分界说明）
-- `NetworkManager/NetworkManager` → `man/nmcli-examples.xml`（nmcli-examples(7)）与 `src/nmcli/gen-metadata-nm-settings-nmcli.xml.in`（nm-settings-nmcli(5) 的属性描述源）
-- 未采信：搜索命中的博客与中文教程（键名与默认值彼此矛盾，按约定只作线索）
-
-### 仍需上板实测（本文档核对解决不了的）
-
-| 事项 | 板上判据 |
-|---|---|
-| ~~这台 3B 的图形驱动路径（KMS 是否默认启用）~~ **已核（`[板上实测]` 2026-10-19）** | 判据原样跑通：`/boot/firmware/config.txt` 第 26 行 `dtoverlay=vc4-kms-v3d`**未被注释**，`/dev/dri/` 下有 `card0` 与 `renderD128`。→ **本板默认走 KMS**，因此上面第 3 里那批 legacy `hdmi_*` 旧键大多不生效（`[待验证]` 具体哪几条在 KMS 下仍被读取，本轮没逐项验） |
-| ~~这块 3B 的 SD 卡落在基线节的哪一边~~ **已核** | 四条判据全套跑完，见「首轮板上基线」：Raspbian 13 (trixie)、`/home` 无 `pi`、`sshd` enabled、boot 分区无 `ssh`/`userconf.txt` |
-| ~~`gpu_mem` 实际生效值~~ **已核（`[板上实测]` 2026-10-19）** | `vcgencmd get_mem gpu` → `gpu=76M`；`vcgencmd get_config int` 里**没有 `gpu_mem` 行**，即未显式配置，76M 是默认推导——V1/V3 那条「默认 76 的依据是内存 ≥1 GB」在本板对上 |
-| `nmcli` 静态配置后 DNS 是否两个都落盘（分隔符按官方示例选了空格） | 见「地址固定」小节的回读命令。**未验**：本板当前仍是 DHCP（`[板上实测]` `ip -4 addr show wlan0` 显示 `/23` 且 `dynamic`），未做静态配置 |
-| 复合视频在 3B 上是否真的默认可输出（默认值 `1` 是文档结论） | 半条已核：`[板上实测]` `vcgencmd get_config int` 读到 `enable_tvout=1`，与 V1「3B 上默认即为 1」一致；**插 AV 线是否真有画面仍未验**，本板全程经 HDMI 输出 |
-
-### 开机进命令行还是桌面（cmdline.txt / raspi-config）
-
-`cmdline.txt` 末尾追加（空格分隔、不换行）：
-
-```
-systemd.unit=multi-user.target
-```
-
-效果是开机直接进命令行、不起图形界面，内存立刻宽裕；想回桌面就把这一项删掉。`[待验证]`
-
-`raspi-config` 菜单（`sudo raspi-config`）：Boot Options → Desktop / CLI 选 CLI 或 Desktop，并可设是否自动登录；Display Options → Headless resolution 设无头虚拟分辨率；Interface Options → VNC / SSH。**菜单编号在不同代际间会变，按文字找，别按编号**。`[待验证]`
-
-不重启临时切换，用于调试：
-
-```bash
-sudo systemctl isolate multi-user.target     # 立刻切命令行
-sudo systemctl isolate graphical.target      # 立刻切回桌面
-systemctl get-default                        # 下次开机进哪个目标
-```
-
-在 SSH 会话里跑交互式 `raspi-config`，部分菜单项会因拿不到真实终端而报错或表现异常；不放心就直接改上面那两个文件。`[待验证]`
-
-### VNC（要图形界面但不接屏）
-
-`raspi-config` → Interface Options → VNC 启用，电脑侧客户端连 `<Pi 的 IP>:5900`（电脑侧装 RealVNC Viewer 并按 IP 直连，归 `rpi-ssh.md`）。Pi 侧要点：
-
-- `[待验证]` Bookworm 起后端是 **wayvnc**（Wayland），需要图形会话真的在跑，也就是必须保持 Desktop 模式——这与上面「切 CLI」互斥，两者只能选一个。
-- `[待验证]` 较旧版本用 x11vnc，行为不同。
-- 无头跑 VNC 时先按上面设好 headless resolution 或 `framebuffer_*`，否则分辨率可能落在默认小值上。
-
-### 需求对照
-
-| 需求 | 配置 | 需要接屏吗 |
-|---|---|---|
-| 跑服务/脚本/上位机任务 | `systemd.unit=multi-user.target` | 否 |
-| 平时省资源、偶尔要桌面 | Desktop + VNC | 否 |
-| 接了屏但分辨率认不对 | `hdmi_group=2` + `hdmi_mode=16` | 是 |
-| 画面有黑边 | `disable_overscan=1` | 是 |
-| 无头跑截图/浏览器 | `framebuffer_width/height` | 否 |
-| 接老电视/仅 AV 线（3B） | 复合视频默认已开，制式用 `sdtv_mode=2`（PAL） | 接电视 |
-| 内存不够 | 切 `multi-user.target`，最省 | 否 |
+| 项 | 内容 | 档 |
+| --- | --- | --- |
+| 无头前提＋config.txt 显示项（热插拔与输出开关） | 不接显示器时 Pi 完全正常工作（headless 是天生能力），显示行为全部可事后调整且**改动可逆**——删掉加的那几行即恢复原状，不需要重烧镜像。`hdmi_force_hotplug=1`＝没插线也当作已接显示（接屏后分辨率认不对、无头跑图形栈时用）；`hdmi_ignore_hotplug=1`＝假装没接显示器、**禁用 HDMI 输出**（官方原文 HDMI output will therefore be disabled, even if a monitor is connected；「永久不要 HDMI」的正解；与上一行互为反向、同写相互抵消）；`hdmi=0` **不是合法键名、已弃用** | `[待验证]`（整表无板上实测） |
+| config.txt 显示项（分辨率与画面）／（显存/复合/串口） | 【分辨率】`hdmi_group=2`+`hdmi_mode=16`＝强制分辨率（group 2=DMT、16=1920×1080@60）；`framebuffer_width=1920`/`framebuffer_height=1080`＝固定 framebuffer（无头截图、无头浏览器要知道「虚拟屏幕」多大）；`disable_overscan=1`＝去黑边；`hdmi_drive=2`＝强制 HDMI 输出含音频（来自已并入的历史源稿 `rpi-display-headless.md`，长线缆或画质/音频异常时试；与 group/mode 是两个维度别混）；改动只在开机读一次、必须重启。【显存/复合/串口】`gpu_mem=128`：默认值按**内存容量**而非机型——<1 GB 为 `64`、≥1 GB 为 `76`（3B 恰 1 GB 故 `76`）；调低给 CPU 腾内存，官方明确 VideoCore 架构下调高无性能收益反而可能有害，Pi 5 起本项无效。`sdtv_mode=2`：复合视频制式（3B 这代），默认 `0`=NTSC、`2`=PAL，配套 `sdtv_aspect`（默认 `1`=4:3）、`sdtv_disable_colourburst`；3B 复合视频**默认可用**（见 V2）。`enable_uart=1`：使能串口控制台，与显示无关但同在 config.txt | `[待验证]` |
+| 手册核对 V1／V2／V3／V4（2026-10-15，只查文档未上板；文档口径，板上行为仍 `[待验证]`） | V1 `hdmi=0`：config.txt 与 Legacy config.txt 两页键名列表都没有裸 `hdmi` 键、全文零命中——禁用归 `hdmi_ignore_hotplug=1`、无头当作接屏归 `hdmi_force_hotplug=1`（Legacy video options）。V2 `enable_tvout=1`：**机型判断与源文档相反，3B 默认就是 `1`**（官方默认值表：Pi 4B 起旗舰、CM4 起计算模块、键盘机型默认 `0`，**其他所有机型默认 `1`**，3B 属后者、复合走板边 3.5mm AV 孔）；「启用复合即禁 HDMI」与 `enable_tvout`+`dtoverlay=vc4-kms-v3d,composite`+`vc4.tv_norm=` 整套是较新机型（KMS 路径）的说明，3B 的复合参数是 `sdtv_*` 一族。V3「3B 默认不启用 KMS？」**官方文档没有按机型的 KMS 默认值，手册裁不了**（查过 config.txt/Legacy 全分节、Display/audio、raspi-config 页）；唯一相邻限定是 Legacy 页 IMPORTANT：用 VC4 KMS 时显示链由 Linux 接管、`hdmi_*` 旧键只对 legacy FKMS 与固件驱动生效——它恰依赖本条要实测的结果、不能反当结论；板上已裁见下行。V4 `gpu_mem` 默认 `76` 数值成立、**依据是内存容量不是机型**（Legacy memory options；调高无收益可能有害、Pi 5 起无效） | 文档层结论＋`[待验证]`（V3 手册层）→板上已裁 |
+| 板上已核／未验清单项 | 【已核 `[板上实测]` 2026-10-19】**本板默认走 KMS**：`/boot/firmware/config.txt` 第 26 行 `dtoverlay=vc4-kms-v3d` 未被注释、`/dev/dri/` 有 `card0` 与 `renderD128` → V3 那批 legacy `hdmi_*` 旧键大多不生效（`[待验证]` 具体哪几条 KMS 下仍被读取，未逐项验）；`gpu_mem` 实值 `vcgencmd get_mem gpu`→`76M` 且 `get_config int` 无 `gpu_mem` 行＝默认推导，V4 对上；`get_config int` 读到 `enable_tvout=1` 与 V2 一致——**插 AV 线是否真有画面仍未验**，本板全程经 HDMI 输出。SD 卡落基线哪边也已核（见「首轮板上基线」）。【仍未验】nmcli 静态配置后 DNS 是否两个都落盘（分隔符按官方示例选了空格）：**未验**——本板当前仍是 DHCP（`[板上实测]` `ip -4 addr show wlan0` 显示 `/23` 且 `dynamic`），未做静态配置，回读命令见「WiFi 通道」地址固定行 | `[板上实测]`+`[待验证]` |
+| 开机进命令行还是桌面／需求对照速查 | 【开机目标】`cmdline.txt` 末尾追加 `systemd.unit=multi-user.target`（空格分隔不换行）→ 开机直接进命令行不起图形界面、内存立刻宽裕，想回桌面删掉这一项 `[待验证]`；`raspi-config`：Boot Options → Desktop/CLI（可选自动登录）、Display Options → Headless resolution、Interface Options → VNC/SSH——**菜单编号不同代际会变，按文字找别按编号** `[待验证]`；不重启临时切换：`sudo systemctl isolate multi-user.target`／`sudo systemctl isolate graphical.target`，`systemctl get-default` 看下次开机；SSH 会话里跑交互式 raspi-config，部分菜单项因拿不到真实终端会报错或表现异常，不放心就直接改那两个文件 `[待验证]`。【速查】跑服务/脚本/上位机任务→`systemd.unit=multi-user.target`（不接屏）；平时省资源偶尔要桌面→Desktop+VNC（不接屏）；接屏分辨率认不对→`hdmi_group=2`+`hdmi_mode=16`（要接屏）；黑边→`disable_overscan=1`（要接屏）；无头截图/浏览器→`framebuffer_width/height`（不接屏）；老电视/仅 AV 线（3B）→复合视频默认已开、制式 `sdtv_mode=2`（PAL）；内存不够→切 `multi-user.target` 最省 | `[待验证]` |
+| VNC（要图形界面但不接屏）／显示侧验证与判读 | 【VNC】`raspi-config` → Interface Options → VNC 启用，电脑侧客户端连 `<Pi 的 IP>:5900`（装 RealVNC Viewer 按 IP 直连归 `rpi-ssh.md`）。Bookworm 起后端是 **wayvnc**（Wayland），需要图形会话真的在跑＝必须保持 Desktop 模式——与「切 CLI」互斥、两者只能选一个 `[待验证]`；较旧版本用 x11vnc、行为不同 `[待验证]`；无头跑 VNC 先设好 headless resolution 或 `framebuffer_*`，否则分辨率可能落在默认小值上。【验证】`free -h`（图形环境占多少内存）；`grep -v '^#' /boot/firmware/config.txt \| grep .`（当前生效配置，路径按代际调整）；`vcgencmd get_mem gpu`／`measure_temp`／`get_throttled`（是否被限速限流，`0x0` 最健康）；`systemctl list-units --type=target --state=active`（确认是否真在 multi-user）；查固件实际读到的值用 `vcgencmd get_config int`（列非零整数项）——比回读文件可靠，文件里有注释行。「改了没生效」九成是忘重启；「接屏黑屏」先分辨是屏/线还是 Pi 真没输出，动过 `hdmi_ignore_hotplug`/`hdmi_force_hotplug`/`sdtv_*` 就先把 config.txt 恢复原状再判 | `[待验证]`＋命令+判读 |
+| 依据与未采信 | 权威源只用两处：Raspberry Pi 官方文档（config.txt 页与 Legacy config.txt 页）＋ NetworkManager 自带手册页源文件。raspberrypi.com 发布页对本机返回 403，全部改取 `raspberrypi/documentation` 仓库同源 adoc：`legacy_config_txt/video.adoc`、`legacy_config_txt/memory.adoc`、`config_txt/video.adoc`、`config_txt/what_is_config_txt.adoc`、`getting-started/setting-up.adoc` 等；NM 侧 `man/nmcli-examples.xml`（nmcli-examples(7)）与 `src/nmcli/gen-metadata-nm-settings-nmcli.xml.in`（nm-settings-nmcli(5)）。**未采信**：搜索命中的博客与中文教程（键名与默认值彼此矛盾，按约定只作线索） | 文档层 |
 
 ### 关屏省资源：先量到的是谁在占（`[板上实测]` 2026-10-19）
-
-「关屏能省多少」的答案**不是驱动，是整套桌面**。本板实测：`systemctl get-default` → `graphical.target`，`lightdm` **active**，自动登录会话拉起 **labwc**（PPID 是 lightdm 的 autologin session scope），wayvnc / wayvnc-control / wf-panel-pi / `pcmanfm --desktop` / 三个 `xdg-desktop-portal` / wireplumber 全在这条链上，**RSS 合计 249 MB（全板 921 MB）**。
-
-- **依赖链决定关哪一层最有效**：`graphical.target` → `lightdm.service` → session scope → labwc → 其余。**改顶层一个开关，下面全塌**，不需要逐个 `mask`。
-- `vc4-kms-v3d` 与 `/dev/dri/card0` 属驱动层，注释 overlay 才是真无 DRM，但会连带 `camera_auto_detect=1` 失效，且**注释后 boot 早期能否出图本板未验**（`[待验证]`）。`gpu_mem` 一栏已由 ④ 实测：**KMS 开着也能降到 16**，固件与 boot 都不报错（见「④ 的执行实录」），但代价是 VCHI 整套起不来——与本节原先「16 的最小允许值未核」的口径不同，那条 `[待验证]` 就地升格。
-- **关屏的前置条件本板已满足**：`/dev/serial0 -> ttyS0`（mini UART，`config.txt` 有 `enable_uart=1`），`serial-getty@ttyS0.service` 为 **active**（`enabled-runtime`）。关掉图形控制台后串口仍是登录入口。
-- **一条不可自动恢复的代价**：远程看画面靠 `wayvnc.service` + `wayvnc-control.service`（后者 `BindsTo=wayvnc.service`），随顶层一起消失。SSH 与 ttyd 不受影响。
-- **四个档位按代价递增，本板现停在「② ＋ ④」，③ 跳过未做**：① `sudo systemctl set-default multi-user.target`（可逆，免重启生效用 `isolate`）——**2026-10-19 已由用户选定并执行，见下面的执行实录**；② 在 ① 之上 `sudo systemctl disable getty@tty1`，并把 `cmdline.txt` 的 `console=tty1`、`quiet splash`、`plymouth.ignore-serial-consoles` 删掉只留串口那一条 console——省不了内存，买到「所有输出只从串口走」这条确定性；**2026-10-19 同日也已执行并重启复验，见「② 的执行实录」**；③ 注释 `dtoverlay=vc4-kms-v3d` 与 `max_framebuffers=2`，真无 DRM 与 HDMI 输出，代价是 `camera_auto_detect` 失效、且要重启才生效（改坏时**串口就是唯一救援入口**，所以 ② 必须排在 ③ 前面做）——**未执行；且实测表明它不是 ④ 的前提，为拿内存而做 ③ 是白付代价**；④ `gpu_mem` 下调——**同日已执行（`gpu_mem=16`），这是四档里唯一真把内存还给 arm 的一档（+49 MB），代价是 VCHI/相机路径没**。①② 属系统层、可当场回退，③④ 属固件层。
+| 项 | 内容 | 档 |
+| --- | --- | --- |
+| 谁在占＋依赖链与前置条件 | 「关屏能省多少」的答案**不是驱动，是整套桌面**：`systemctl get-default`→`graphical.target`、`lightdm` active、自动登录会话拉起 **labwc**（PPID 是 lightdm 的 autologin session scope），wayvnc／wayvnc-control／wf-panel-pi／`pcmanfm --desktop`／三个 `xdg-desktop-portal`／wireplumber 全在这条链上，**RSS 合计 249 MB（全板 921 MB）**。依赖链 `graphical.target` → `lightdm.service` → session scope → labwc → 其余：**改顶层一个开关，下面全塌**，不需要逐个 `mask`。关屏前置本板已满足：`/dev/serial0 -> ttyS0`（mini UART，config.txt 有 `enable_uart=1`）、`serial-getty@ttyS0.service` **active**（`enabled-runtime`）——关掉图形控制台后串口仍是登录入口。不可自动恢复的代价：远程看画面靠 `wayvnc.service`+`wayvnc-control.service`（后者 `BindsTo=wayvnc.service`），随顶层一起消失；SSH 与 ttyd 不受影响 | `[板上实测]` |
+| 驱动层与 `gpu_mem`／四档方案与现状 | 【驱动层】`vc4-kms-v3d` 与 `/dev/dri/card0` 属驱动层，注释 overlay 才是真无 DRM，但连带 `camera_auto_detect=1` 失效，且**注释后 boot 早期能否出图本板未验** `[待验证]`。`gpu_mem` 一栏已由 ④ 实测：**KMS 开着也能降到 16**、固件与 boot 都不报错（见「④ 的执行实录」）——与原先「16 的最小允许值未核」口径不同，那条 `[待验证]` 就地升格。【四档】① `sudo systemctl set-default multi-user.target`（可逆，免重启生效用 `isolate`）——2026-10-19 用户选定并执行；② ① 之上 `sudo systemctl disable getty@tty1`＋把 `cmdline.txt` 的 `console=tty1`、`quiet splash`、`plymouth.ignore-serial-consoles` 删掉只留串口那条 console——省不了内存，买「所有输出只从串口走」的确定性，同日已执行并重启复验；③ 注释 `dtoverlay=vc4-kms-v3d` 与 `max_framebuffers=2`（真无 DRM/HDMI；改坏时**串口是唯一救援入口**，所以 ② 必须排在 ③ 前）——**未执行，且实测表明它不是 ④ 的前提，为拿内存做 ③ 是白付代价**；④ `gpu_mem` 下调——同日已执行 `gpu_mem=16`，四档里唯一真把内存还给 arm 的（+49 MB），代价是 VCHI 整套没。①② 系统层当场可回退、③④ 固件层；**本板现停在「②＋④」** | `[板上实测]`+`[待验证]` |
 
 ### ① 的执行实录：省到的不是 249 MB，是 50 MB（`[板上实测]` 2026-10-19，经 SSH 执行）
-
-用户选定只走 ①，不碰 boot 分区。两条命令：`sudo systemctl set-default multi-user.target`（`default.target` 符号链接改为 `multi-user.target`）＋ `sudo systemctl isolate multi-user.target`（当场生效，**没有重启**——这块板欠压未修，重启要另找时机）。
-
-| 项 | 执行前 | 执行后 |
-|---|---|---|
-| `systemctl get-default` | `graphical.target` | `multi-user.target` |
-| `systemctl is-active lightdm graphical.target` | `active` / `active` | **`inactive` / `inactive`** |
-| `free -m` used | 244 | **194**（available 676 → 726） |
-| `labwc` / `wayvnc` / `lightdm` 进程 | 桌面链在 | `pgrep` 全空 |
-| `ssh` / `serial-getty@ttyS0` | active | **仍 active**（SSH 会话没被 isolate 打断，串口入口没动） |
-
-- **为什么只有 50 MB 而不是 249 MB**：上面那次 249 MB 的量是**自动登录桌面会话全开时**的数（labwc + panel + pcmanfm + portal + wayvnc 一整串）。本轮执行前 `systemctl is-active wayvnc wayvnc-control` 已经是 **`inactive`**、HDMI 的 `/sys/class/drm/card0-*/status` 是 `disconnected`，也就是桌面链本来就没跑满；① 关掉的是 `lightdm` 那一层，拿到的就是那一层的量。**教训：省多少要先看当下谁在跑，不能引用上一次满桌面时的数。**
-- **剩下的三笔省不到，而且不该省**：`wireplumber` 23 MB、`xdg-desktop-portal` 15.6 MB、`rpi-connectd` 11.9 MB 仍在，`cut -d: -f3 /proc/<pid>/cgroup` 显示它们全挂在 `/user.slice/user-1000.slice/user@1000.service/…`——**是这次 SSH 登录自身拉起的 user session**，与 `graphical.target` 无关。要清它们得 mask user units，代价是音频与 portal 没，且下次图形登录还得改回，不划算。→ **判据：`ps` 里的残留要先认 cgroup 再决定关不关，别一律当桌面残留。**
-- **一条实测纠正（推翻我上一版正文）**：`cmdline.txt` 文件里**原文就是 `console=serial0,115200`**，而 `/proc/cmdline` 显示的是 **`console=ttyS0,115200`**——`serial0` 是固件写进设备树的 alias，内核按 alias 解析成实际端口（本板 `tr -d '\0' < /proc/device-tree/aliases/serial0` → **`/soc/serial@7e215040`** = mini UART，`serial1` → `7e201000` = 全功能 UART；`/dev/serial0 -> ttyS0`），所以**两个字符串都出现、指同一设备，不矛盾**。上一版正文据 `/proc/cmdline` 断言「文件不是 `serial0`」是错的：读的是运行时视图不是源文件。→ **判据：比内核命令行要「文件值」与 `/proc` 值成对读，只读一边必然得出假冲突，而且它会以「实测纠正」的名义盖掉原本正确的正文。** 驱动侧把 alias 绑成 `ttyS0` 的具体代码路径未查，本仓只记录这条观察到的对应关系。
-- 本板 cmdline 还带 `cfg80211.ieee80211_regdom=CN`（国家码由 raspi-config 写进内核命令行，WiFi 那节的 `[待验证]` 在此有落点）。
-- **回退（一条命令，不需要重启）**：`sudo systemctl set-default graphical.target && sudo systemctl isolate graphical.target`。**重启后的持久性已在同日 ② 的那次重启里复验通过**（`get-default` 仍是 `multi-user.target`，`lightdm`/`graphical.target` 均 `inactive`）。
-- `getty@tty1` 当时仍 `enabled` 且 `active`——那是 ② 的范围，见下一节。
+| 项 | 内容与读数 | 档 |
+| --- | --- | --- |
+| 用户选择＋操作与前后对照 | 用户选定只走 ①、不碰 boot 分区。`sudo systemctl set-default multi-user.target`（`default.target` 符号链接改为 `multi-user.target`）＋ `sudo systemctl isolate multi-user.target`（当场生效，**没有重启**——本板欠压未修，重启另找时机）。结果：`get-default` graphical→multi-user；`is-active lightdm graphical.target` active/active→**inactive/inactive**；`free -m` used 244→**194**（available 676→726）；`pgrep` labwc/wayvnc/lightdm 全空；`ssh` 与 `serial-getty@ttyS0` **仍 active**（SSH 会话没被 isolate 打断、串口入口没动） | `[板上实测]` |
+| 为什么只有 50 MB 不是 249／剩下三笔省不到也不该省 | 249 是**自动登录桌面会话全开时**（labwc+panel+pcmanfm+portal+wayvnc 整串）的量；执行前 `is-active wayvnc wayvnc-control` 已 `inactive`、HDMI 的 `/sys/class/drm/card0-*/status` 已 `disconnected`——桌面链本来就没跑满，① 关掉的是 lightdm 一层、拿到的就是那一层的量。**教训：省多少要先看当下谁在跑，不能引用满桌面时的数**。`wireplumber` 23 MB、`xdg-desktop-portal` 15.6 MB、`rpi-connectd` 11.9 MB 仍在，`cut -d: -f3 /proc/<pid>/cgroup` 显示全挂在 `/user.slice/user-1000.slice/user@1000.service/…`——**是这次 SSH 登录自己拉起的 user session**、与 `graphical.target` 无关；清它们要 mask user units，代价是音频与 portal 没、下次图形登录还得改回，不划算。**判据：`ps` 里的残留先认 cgroup 再决定关不关，别一律当桌面残留** | `[板上实测]` |
+| serial0↔ttyS0（实测纠正一条旧正文）／附带与回退 | `cmdline.txt` 文件里**原文就是 `console=serial0,115200`**，而 `/proc/cmdline` 显示 `console=ttyS0,115200`：`serial0` 是固件写进设备树的 alias、内核按 alias 解析（`tr -d '\0' < /proc/device-tree/aliases/serial0` → **`/soc/serial@7e215040`**＝mini UART；`serial1` → `7e201000`＝全功能 UART；`/dev/serial0 -> ttyS0`）——**两个字符串都出现、指同一设备，不矛盾**；上一版据 `/proc/cmdline` 断言「文件不是 serial0」是错的，读的是运行时视图不是源文件。**判据：比内核命令行要把「文件值」与 `/proc` 值成对读，只读一边必然得出假冲突，而且它会以「实测纠正」的名义盖掉原本正确的正文**。驱动侧把 alias 绑成 `ttyS0` 的代码路径未查，本仓只记录观察到的对应关系。附带：本板 cmdline 还带 `cfg80211.ieee80211_regdom=CN`（国家码由 raspi-config 写进内核命令行，WiFi 那节的 `[待验证]` 在此有落点）。回退一条命令、不需重启：`sudo systemctl set-default graphical.target && sudo systemctl isolate graphical.target`；**重启后的持久性已在同日 ② 的那次重启里复验通过**（`get-default` 仍 `multi-user.target`、lightdm/graphical 均 inactive）。`getty@tty1` 当时仍 enabled 且 active——那是 ② 的范围 | `[板上实测]` |
 
 ### ② 的执行实录：改配置＋重启复验通过（`[板上实测]` 2026-10-19，经 SSH 执行）
+| 项 | 内容与读数 | 档 |
+| --- | --- | --- |
+| 为什么要重启、动作与当场结果 | `cmdline.txt` 只在 boot 阶段由固件读一次，`disable getty@tty1` 只摘下次开机的 `wants` 链接、当前实例仍在跑 → **要重启**。动作：备份 `sudo cp /boot/firmware/cmdline.txt{,.bak}`（`.bak` 176 字节与原文件一致）→ 改写：保留其余参数、删 `console=tty1`/`quiet splash`/`plymouth.ignore-serial-consoles`，新文件 **118 字节、仍是 1 行、行尾无换行**（`wc -l`=0 与备份同）→ 逐 token 核差异 `diff <(tr ' ' '\n' < .bak) <(tr ' ' '\n' < cmdline.txt)`：**只少这 3 个 token**，`console=serial0,115200` 与 root/rootfstype/fsck/rootwait/regdom 全部原样 → `sudo systemctl disable getty@tty1`：`Removed '…/getty.target.wants/getty@tty1.service'`、`is-enabled`→`disabled`。改后整行（**必须一整行，换行＝内核参数解析失败直接起不来**）：`console=serial0,115200 root=PARTUUID=<分区> rootfstype=ext4 fsck.repair=yes rootwait cfg80211.ieee80211_regdom=CN` | `[板上实测]` |
+| 重启后复验（全部通过；2026-10-19 14:20 那次 boot，agent 经 SSH 触发重启并等约 40 秒上线）／排序理由、代价与读数判据、回退 | `cat /proc/cmdline`：**无 `console=tty1`、无 `quiet splash`、无 `plymouth.ignore-serial-consoles`**，文件里的 `serial0` 显示为 `console=ttyS0,115200`（与 alias 判据一致）；`getty@tty1` `disabled`/`inactive`（tty1 无登录口）；`serial-getty@ttyS0` `enabled-runtime`/**`active`**（串口仍是入口）；① 重启后保住：`get-default`=`multi-user.target`、lightdm/graphical inactive、`pgrep labwc` 空；`free -m` used **136**/available 784（**全新 boot 的干净值**，比 ① 当场读到的 194 更低）；`vcgencmd get_throttled` **仍 `0x50000`——重启不解决欠压，硬规则继续生效**。② 排 ③ 前：③ 改坏时唯一救援入口是串口 getty，② 先把「输出只从串口走」变成确定事实，③ 的风险才可接受（本板 serial-getty 全程 active、SSH 未断）。② 省不了内存：买的是「tty1 没有可登录入口＋启动日志全走串口」的一致性，资源收益已在 ① 拿掉。新判据：used 194→136 的差不是 ② 省的，是**这次连接还没拉起 user session**（portal/wireplumber/rpi-connectd 那 50 MB 一类）→ **同一块板的 `free` 读数要按「这次会话登录了多久」对照，跨会话比数必然得出假的「又省了」**。①② 现为「配置就位＋重启复验通过」；回退两条：`set-default graphical.target && isolate graphical.target`、`sudo cp /boot/firmware/cmdline.txt.bak /boot/firmware/cmdline.txt && sudo systemctl enable getty@tty1`（后者要再重启才完全回退） | `[板上实测]` |
 
-用户点「做」，并问是否要重启。答案是**要**：`cmdline.txt` 只在 boot 阶段由固件读一次，`disable getty@tty1` 只摘掉下次开机的 `wants` 链接、当前那个 `getty@tty1` 实例仍在跑。先落配置（下面前三行），再起一次 `sudo reboot` 复验（下面复验表）。
+### ④ 的执行实录：`gpu_mem=16` 拿到 49 MB，代价是 VCHI 整套没（`[板上实测]` 2026-10-19，三轮重启 A/B）
+| 项 | 内容与读数 | 档 |
+| --- | --- | --- |
+| 操作与 A/B 对照（A＝默认无该行，实测 76M；B＝`gpu_mem=16`） | 用户直接点 ④（跳过 ③）：`printf 'gpu_mem=16\n' \| sudo tee -a /boot/firmware/config.txt`（追加在 `[all]` 段末尾），备份 `config.txt.bak`，重启。`get_mem gpu`/`arm`：A `76M/948M` → B **`16M/998M`**；`free` total/available（boot 后）：A **921**/794 → B **970（+49）**/846（+52）；`sudo dmesg` VCHI：A 无失败行（只有 staging 警告）→ B **4 条 `Failed to open VCHI service (-22)`**（含 `vc_sm_cma_vchi_init`、`bcm2835_mmal_vchiq`）；`/dev/video*`：A 13 个（`video10…31`）→ B **一个都没有**；`/dev/dri`：A `card0`/`renderD128` → B 不变（KMS 没动）；`/proc/asound/cards`：A `vc4hdmi`+`bcm2835 Headphones` → B 不变（3 行计数同）；蓝牙/串口 getty/SSH：全不受影响 | `[板上实测]` |
+| 旧口径推翻／代价在哪／中间值／方法账与被照出的旧问题 | 「④ 只在走完 ③ 之后才谈」**被实测推翻**：`gpu_mem` 单独就能降、KMS 不拦（16 是允许值，boot 与固件都不报错）、不需要以 ③ 为前提。真正的代价不在显示在 **VCHI**：固件侧 VCHI 起不来 → `vc_sm_cma`（相机共享内存）与 `bcm2835_mmal_vchiq`（老 MMAL 栈）全部初始化失败、`/dev/video*` 13 个节点整个消失——**本板没插相机当下无感**，要用 `rpicam-*`/libcamera（老栈路径）就得抬回。**判据：这不是「相机驱动没加载」，是 GPU 分少了导致固件服务没起，`ls /dev/video*` 是最快判别**。中间值 `gpu_mem=32/64` 是否同样砍掉 VCHI `[待验证]`（本轮只做「默认 vs 16」两点对照，没画曲线）。**为什么必须重启两次**：本板 journal 非持久（`journalctl -b -1 -k` → `no persistent journal was found`），跨 boot 对照不能事后取证——每次改动前先把当轮 `dmesg` 计数读完再重启，A/B 才成立。被重启照出的 ① 后遗症：`rpi-connect-wayvnc.service` 在 user session 里**每 5 秒重试启动并失败**（`journalctl -b -p err` 刷屏）——wayvnc 的可执行依赖没了但 rpi-connect 还在拉它；**未处理**（mask 该 user unit 或留着不管，刷屏只在 journald 里） | `[板上实测]`+`[待验证]` |
 
-| 动作 | 命令 | 当场结果 |
-|---|---|---|
-| 备份原文件 | `sudo cp /boot/firmware/cmdline.txt{,.bak}` | `.bak` 176 字节，与原文件一致 |
-| 改写 cmdline | 保留其余参数，删 `console=tty1`、`quiet splash`、`plymouth.ignore-serial-consoles` | 新文件 **118 字节、仍是 1 行、行尾无换行**（`wc -l` = 0 与备份同） |
-| 逐 token 核差异 | `diff <(tr ' ' '\n' < .bak) <(tr ' ' '\n' < cmdline.txt)` | **只少了这 3 个 token**，`console=serial0,115200` 与 root/rootfstype/fsck/rootwait/regdom 全部原样 |
-| 关 tty1 登录口 | `sudo systemctl disable getty@tty1` | `Removed '…/getty.target.wants/getty@tty1.service'`，`is-enabled` → `disabled` |
-
-改后的整行（**必须是一整行，换行＝内核参数解析失败直接起不来**）：
-
-```
-console=serial0,115200 root=PARTUUID=<分区> rootfstype=ext4 fsck.repair=yes rootwait cfg80211.ieee80211_regdom=CN
-```
-
-- **为什么 ② 排在 ③ 前面**：③ 要注释 `vc4-kms-v3d`，改坏时唯一救援入口是串口 getty；② 先把「输出只从串口走」变成确定事实，③ 的风险才可接受。本板 `serial-getty@ttyS0` 全程 `active`，SSH 未断。
-- **② 省不了内存**：买的是「tty1 上没有可登录入口 + 启动日志全走串口」这条一致性；资源收益已经在 ① 拿掉了。
-- **重启后复验：全部通过**（`[板上实测]` 2026-10-19 14:20 那次 boot，由 agent 经 SSH 触发重启并等约 40 秒上线）：
-
-| 复验项 | 命令 | 结果 |
-|---|---|---|
-| 新 cmdline 真的生效 | `cat /proc/cmdline` | **无 `console=tty1`、无 `quiet splash`、无 `plymouth.ignore-serial-consoles`**；文件里的 `serial0` 显示为 `console=ttyS0,115200`，与上面的 alias 判据一致 |
-| tty1 没有登录口 | `systemctl is-enabled/is-active getty@tty1` | `disabled` / `inactive` |
-| 串口仍是入口 | 同上 `serial-getty@ttyS0` | `enabled-runtime` / **`active`** |
-| ① 重启后保住 | `systemctl get-default` | `multi-user.target`；`lightdm` `inactive`、`graphical.target` `inactive`、`pgrep labwc` 空 |
-| 内存 | `free -m` | used **136** / available 784（**全新 boot 的干净值**，比 ① 当场读到的 194 更低） |
-| 供电 | `vcgencmd get_throttled` | **仍 `0x50000`**——重启不解决欠压，硬规则继续生效 |
-
-- **一条新的读数判据**：used 从「① 之后 194」掉到「重启后 136」，差值不是 ② 省下的（② 不动内存），是**这次连接还没拉起 user session**（portal/wireplumber/rpi-connectd 那 50 MB 一类）。→ **同一块板的 `free` 读数要按「这次会话登录了多久」对照，跨会话比数必然得出假的「又省了」。**
-- **①② 现已都是「配置就位＋重启复验通过」**，不再依赖 `isolate` 的临时状态。回退仍是两条：`sudo systemctl set-default graphical.target && sudo systemctl isolate graphical.target`、`sudo cp /boot/firmware/cmdline.txt.bak /boot/firmware/cmdline.txt && sudo systemctl enable getty@tty1`（后者要再重启才完全回退）。
-
-
-### ④ 的执行实录：`gpu_mem=16` 拿到了 49 MB，代价是 VCHI 整套没（`[板上实测]` 2026-10-19，三轮重启 A/B）
-
-用户直接点 ④（跳过 ③）。改法一行：`printf 'gpu_mem=16\n' | sudo tee -a /boot/firmware/config.txt`（追加在 `[all]` 段末尾），备份 `config.txt.bak`，重启。
-
-| 项 | `gpu_mem` 默认（无该行，实测 76M） | `gpu_mem=16` |
-|---|---|---|
-| `vcgencmd get_mem gpu` / `arm` | 76M / 948M | **16M / 998M** |
-| `free -m` total | **921** | **970**（+49） |
-| `free -m` available（boot 后） | 794 | **846**（+52） |
-| `sudo dmesg` 里的 VCHI | 无失败行，只有 staging 警告 | **4 条 `Failed to open VCHI service (-22)`**，含 `vc_sm_cma_vchi_init` 与 `bcm2835_mmal_vchiq` |
-| `/dev/video*` | 13 个（`video10…31`） | **一个都没有** |
-| `/dev/dri` | `card0`/`renderD128` | 不变（KMS 没动） |
-| `/proc/asound/cards` | `vc4hdmi` + `bcm2835 Headphones` | 不变（3 行计数同） |
-| 蓝牙 / 串口 getty / SSH | active | 全不受影响 |
-
-- **本仓原先那句「④ 只在走完 ③ 之后才谈」被实测推翻**：`gpu_mem` 单独就能降，KMS 不拦（16 是允许值，boot 与固件都不报错），**不需要以 ③ 为前提**。
-- **真正的代价不是显示，是 VCHI**：`gpu_mem=16` 时固件侧 VCHI 服务起不来 → `vc_sm_cma`（相机/camera 用的共享内存）与 `bcm2835_mmal_vchiq`（老 MMAL 栈）全部初始化失败，`/dev/video*` 那 13 个节点整个消失。**本板没插相机，所以当下无感**；一旦要用 `rpicam-*`/libcamera（老栈路径）就得把 `gpu_mem` 抬回去。→ 判据：**这条不是「相机驱动没加载」，是 GPU 分少了导致固件服务没起，`ls /dev/video*` 是最快的判别。**
-- **中间值未测**：`gpu_mem=32/64` 是否同样砍掉 VCHI `[待验证]`；本轮只做了「默认 vs 16」两点对照，没画曲线。
-- **方法账（为什么必须重启两次）**：本板 journal **非持久**（`journalctl -b -1 -k` → `no persistent journal was found`），跨 boot 对照不能事后取证。所以每次改动前先把当轮 `dmesg` 计数读完再重启，A/B 才成立。
-- **一条与 ④ 无关但被重启照出来的旧问题**：`rpi-connect-wayvnc.service` 在 user session 里**每 5 秒重试启动并失败**（`journalctl -b -p err` 刷屏），是 ① 关掉桌面栈的后遗症——wayvnc 的可执行依赖没了但 rpi-connect 还在拉它。**未处理**（要么 mask 那个 user unit，要么留着不管，刷屏只在 journald 里）。
-
-
-
-### 「屏幕现在是不是不能用了」——①②④ 之后显示层的真实现状（`[板上实测]` 2026-10-19）
-
-一句话结论：**没有把屏关死，只是当前没有任何东西往屏上画。** 硬件与驱动通路完好，可逆；但 ② 保证屏上连字符都不会出现。
-
-| 层 | 板上读数 | 对「插上 HDMI 屏会看到什么」的影响 |
-|---|---|---|
-| ① 桌面 | `systemctl get-default` = `multi-user.target`；`systemctl is-enabled lightdm` 仍为 **`enabled`**（只是没有 target 拉它），`/usr/bin/labwc`、`/usr/bin/wayvnc` 都在盘上 | 不起桌面会话；单元文件与可执行文件一个没删 |
-| ② 控制台 | `/proc/cmdline` 无 `console=tty1`；`getty@tty1` = `disabled`+`inactive`；`cat /sys/class/vtconsole/vtcon*/name` → **只有 `(S) dummy device`** | **即使插了屏也是纯黑**：开机字符、登录提示一概不上屏 |
-| ③ DRM | **未做**：`vc4-kms-v3d` 仍在，`/dev/dri/card0` 在，`/sys/class/drm/card0-HDMI-A-1` 存在、`status=disconnected` | `disconnected` 是**当下没插线**，不是被关掉；插上后 KMS 仍会建模式 |
-| ④ 显存 | `gpu=16M`；`CmaTotal` 仍 **262144 kB（256 MB）**、`CmaFree` 259796 kB | **对真接屏出图的影响未实测**（本板全程无头，两组读数都没插过显示器），不编结论 |
-
-→ 三条可复用判据：
-
-- **屏上会不会有字符，看 `vtcon*/name`，不看 `lightdm` 的 enabled 状态。** 前者 `(S) dummy device` = 虚拟控制台没绑到任何帧缓冲，屏必然黑；后者只说明「开机时没有 target 拉它」，单元本身仍是使能的。
-- **`card0-HDMI-A-1 status=disconnected` 不等于「HDMI 已禁用」。** 真正的禁用是 `hdmi_ignore_hotplug=1` 或注释掉 `vc4-kms-v3d`（③），本板两条都没做。
-- **`gpu_mem=16` 没有缩掉 CMA 保留区**（改前改后 `CmaTotal` 都是 256 MB）。④ 砍的是固件侧 VCHI 服务，不是内核的连续内存池——别把「显存降了」推断成「显示相关保留内存全都降了」。
-
-想让屏重新有用（不新增改动，纯回退）：
-
-```bash
-sudo systemctl isolate graphical.target       # 当场拉起桌面，重启后仍回 multi-user
-sudo systemctl set-default graphical.target   # 开机就要桌面
-```
-
-屏上要字符或登录口（② 的回退，要重启）：
-
-```bash
-sudo cp /boot/firmware/cmdline.txt.bak /boot/firmware/cmdline.txt
-sudo systemctl enable getty@tty1
-sudo reboot
-```
-
-### 显示侧验证
-
-```bash
-free -h                                          # 图形环境占了多少内存
-grep -v '^#' /boot/firmware/config.txt | grep .  # 当前生效配置（路径按代际调整）
-vcgencmd get_mem gpu                             # GPU 显存实际分配
-vcgencmd measure_temp                            # 温度
-vcgencmd get_throttled                           # 是否被限速/限流，0x0 最健康
-systemctl list-units --type=target --state=active  # 当前活跃的 target，确认是否真在 multi-user（图形 target 是否在跑同一看这里）
-```
-
-「改了没生效」九成是忘重启；「接屏黑屏」先分辨是屏/线的问题还是 Pi 真没输出，若动过 `hdmi_ignore_hotplug`、`hdmi_force_hotplug` 或 `sdtv_*` 就先把 config.txt 恢复原状再判。查当前固件实际读到的值用 `vcgencmd get_config int`（列非零整数项），比回读文件更可靠——文件里有注释行。
+### ①②④ 之后显示层的真实现状（回答「屏幕现在是不是不能用了」）
+| 层与判据 | 读数 | 档 |
+| --- | --- | --- |
+| 一句话结论＋① 桌面＋② 控制台（屏变黑的直接原因） | **没把屏关死，只是当前没有任何东西往屏上画**——硬件与驱动通路完好、可逆；但 ② 保证屏上连字符都不出现。① `get-default`=`multi-user.target`；`is-enabled lightdm` 仍 **`enabled`**（只是没有 target 拉它）；`/usr/bin/labwc`、`/usr/bin/wayvnc` 都在盘上 → 不起桌面会话，单元文件与可执行文件一个没删。② `/proc/cmdline` 无 `console=tty1`；`getty@tty1`=`disabled`+`inactive`；`cat /sys/class/vtconsole/vtcon*/name` → **只有 `(S) dummy device`** → **即使插了屏也是纯黑**，开机字符、登录提示一概不上屏 | `[板上实测]` 2026-10-19 |
+| ③ DRM（未做）＋④ 显存 | ③ `vc4-kms-v3d` 仍在、`/dev/dri/card0` 在、`/sys/class/drm/card0-HDMI-A-1` 存在且 `status=disconnected` → 那是**当下没插线**不是被关掉，插上后 KMS 仍会建模式；真禁用要 `hdmi_ignore_hotplug=1` 或注释 `vc4-kms-v3d`，本板两条都没做。④ `gpu=16M`；`CmaTotal` 仍 **262144 kB（256 MB）**、`CmaFree` 259796 kB——**`gpu_mem=16` 没缩掉 CMA 保留区**（④ 砍的是固件侧 VCHI 不是内核连续内存池，别推断成「显示相关保留内存全都降了」）；**对真接屏出图的影响未实测**（本板全程无头），不编结论 | `[板上实测]`+`[待验证]` |
+| 回退（不新增改动）与三条可复用判据 | 想让屏重新有用 `sudo systemctl isolate graphical.target`（当场起桌面，重启后仍回 multi-user）或 `sudo systemctl set-default graphical.target`（开机就要桌面）；要屏上有字符/登录口（② 的回退，要重启）`sudo cp /boot/firmware/cmdline.txt.bak /boot/firmware/cmdline.txt && sudo systemctl enable getty@tty1 && sudo reboot`。**判据**：屏上有没有字符看 `vtcon*/name`、不看 `is-enabled lightdm`；`disconnected` ≠ HDMI 已禁用；`CmaTotal` 未随 `gpu_mem` 缩 | 判据 |
 
 ## 串口控制台（救援通道）
-
-网络彻底不通、WiFi 配挂、系统起不来时，串口是唯一还能操作系统的通道。电脑端终端软件与参数（COM 号、115200 8N1、Flow control 必须 None）归 `rpi-ssh.md`，本节只管 Pi 侧。
-
-### 接线（这部分接错会烧板，动手前先读完）
-
-- `[事实]` Pi 的 GPIO 是 **3.3V 电平**，灌 5V 会烧板。
-- `[事实]` 只接三根线：TX、RX、GND。模块的 VCC/3V3/5V 一概不接——Pi 已由其自身电源供电，用模块供电轻则不工作、重则烧板。
-- `[事实]` TX/RX 必须**交叉**（Pi 发 → 模块收，Pi 收 → 模块发）。同名相连只会看到乱码或全无输出。
-- `[待验证]` 多数 CH340G/CP2102 模块上的 3.3V/5V 拨码决定模块 TX 的空闲电平：**即使不接 VCC，也要拨到 3.3V 档**，否则模块由 USB 供电时 TX 输出仍是 5V，直接伤 Pi GPIO。这条是最常被忽略的烧毁路径。
-
-`[事实]` 正确引脚是 **pin 8、pin 10、pin 6**：
-
-| 树莓派 | 方向 | USB-TTL 模块 |
-|---|---|---|
-| pin 8（GPIO14，UART0 TXD） | → | RX |
-| pin 10（GPIO15，UART0 RXD） | ← | TX |
-| pin 6（GND） | ↔ | GND |
-
-网上不少教程把串口写成 pin 14/15，那是 GND 与 GPIO22/ID_SD，接了不工作甚至损坏。数引脚：带**方形焊盘**的那个角是 pin 1（其余焊盘都是圆的）；偶数号在同一侧、奇数号在另一侧，各自从 pin 1 那角往外数，所以 pin 8 与 pin 10 同在偶数排、中间隔着属于另一排的 pin 9。板上 pin 6/9/14/20/25/30/34 都是 GND，接地随便挑。完整引脚表与电气参数以 `rpi-gpio-pinout.md` 为准。
-
-### 使能与内核输出
-
-- `[板上实测]` **本板的控制台确实走 mini-UART，且波特率参考时钟是动态的**（2026-10-19，这条直接决定第一次插串口会不会乱码）：`readlink /sys/class/tty/ttyS0/device` → **`3f215040.serial`** = AUX mini-UART（PL011 在 `7e201000`，已被蓝牙占走，与上一行一致）；`vcgencmd measure_clock core` → **400 MHz**，`scaling_governor` = **`ondemand`**，`config.txt` 里**只有 `enable_uart=1`（第 49 行），没有 `core_freq` 也没有 `force_turbo`**。→ **后果：core 时钟随负载变，mini-UART 的分频跟着变，115200 会漂**，表现就是上面排障表的「满屏乱码」，**而且它不是接线错**。常见修法是 `config.txt` 加 `core_freq=250`（把参考时钟钉住），**属固件层改动、必须重启**；`[待验证]` 本板加完之后长时间传输是否不再漂，以及 250 与当下 400 的差是否会在其它地方留副作用，都没测。**鉴别顺序**：先按接线三查（交叉/共地/COM 号），接线确认无误再怀疑这一条。**同日 16:20 串口线接通后的实测（`[对端实测]`，电脑侧 COM9 发 CR）**：空载状态下 115200 收到的是**完全干净**的 `<主机名> login:`，连发两次逐字节相同——**漂移没有发生**。所以这条风险的当前定性是「机制在、空载未复现、负载下未测」，**不要照它去改 `config.txt`**，等真撞到乱码再动 `core_freq=250`。
-- `[板上实测]` **串口控制台已端到端打通**（2026-10-19 16:20）：三根线（板 pin 8 → 模块 RX、pin 10 ← 模块 TX、pin 6 ↔ GND，**模块 VCC 不接**）＋ 电脑侧 115200 8N1 Flow=None，发一个 CR 即回登录提示符。**② 把 `cmdline.txt` 里的 `console=tty1` 摘掉之后，串口确实是唯一非网络控制台**，这条由「推断」变成「实测可用」。⚠️ 登录提示符里带**主机名**，贴日志或截图前按 `docs/README.md` 第五节处理。
-- `[对端实测]` **内核消息到串口这条通道已实测打通，且挡住它的是 loglevel 不是线**（2026-10-19 16:35，电脑侧 COM9 全程录字节，板侧同一时刻打时间戳）：本板 `/proc/sys/kernel/printk` 默认 **`3 4 1 3`**（console_loglevel = **3**）。三条对照——`<0>QODER-EMERG-CTRL` 在默认 3 下**出**（`16:35:36.333`，`[   6993.706657]`）；`<6>QODER-INFO-AT3` 在 3 下**不出**；`sudo dmesg -n 7` 之后再发 `<6>` **出**（`16:35:43.552`），随后已恢复 `3 4 1 3`。→ **结论：`console=ttyS0,115200` 在位（`dmesg` 有 `printk: legacy console [ttyS0] enabled`）也照样看不到 info/warning 级内核消息，因为默认只放行 0~2。** 想看就临时 `sudo dmesg -n 7`，验完 `sudo dmesg -n 3` 改回去；**排查「起不来」时优先看 `<0>`/`<1>`/`<2>` 那几级，它们不需要动 loglevel。** 附带一条：这些行**逐字符干净**，距 boot 已约 2 小时（时间戳 6993 秒），mini-UART 漂移仍未复现。
-- `[待验证]` `enable_uart=1` 之外，无头串口调试常配合 `dtoverlay=disable-bt` 把 PL011 让出来（3B 的 PL011 默认归蓝牙）；**两者叠加的确切行为本板未实测**，且关掉蓝牙后 `serial0` 指向哪个控制器、控制台会不会换端口都要重新读，别照抄。
-- `[对端实测]` `cmdline.txt` 含 `console=serial0,115200` 时串口能出登录提示符（2026-10-19 16:20，电脑侧 COM9 发 CR 即回 `<主机名> login:`，两次逐字节相同）。**内核各阶段那一段启动日志本板未复验**——② 已改过 `cmdline.txt`，且这次是接好后发的 CR、没赶上开机输出；要看完整启动日志得重启并同时开着串口。
-- `[待验证]` 想同时在内核 tty1 也看到日志可追加 `console=tty1`，两项并存写法：
-
-  ```
-  console=serial0,115200 console=tty1 systemd.unit=multi-user.target
-  ```
-
-- `[待验证]` 串口登录用的账户与 SSH 同一个，在串口里改密码 SSH 侧同步生效。
-- 用途：改 WiFi 配置（`sudo raspi-config` → Interface Options）、改密码、装包、看日志、系统起不来时看最后一行卡在哪。
-
-### 串口排障（Pi 侧可见的现象）
-
-| 现象 | 判断 |
-|---|---|
-| 全空白、按键无反应 | TX/RX 没交叉；没接 GND；或 COM 号选错（电脑侧） |
-| 满屏乱码 | 波特率不对；没交叉；或波特率未锁（见上 `enable_uart=1`） |
-| 只有回显没有输出 | TX/RX 反了 |
-| 完全无反应 | 板子没启动、供电不足、模块坏、**或电脑侧根本没枚举出口**——后者属物理层（线/口/CC），判据与排查归 `rpi-ssh.md` 第八节「找到口」，在本篇之前就该排掉 |
-| 能登录、但看不到内核消息 | **不是接线**：本板 `printk` 默认 `3 4 1 3`，console_loglevel=3 只放行 emerg/alert/crit，info(6) 一律被挡。临时 `sudo dmesg -n 7` 即出，验完改回 `-n 3`（见上 `[对端实测]` 三条对照） |
-| 输出到一半断 | USB 延长线或供电不足，换短线、换口 |
-
-开机卡住不动就用串口日志看最后一行停在哪儿，比临时找显示器快；这也是「排障顺序」第 0 步的执行手段。
+| 项 | 内容 | 档 |
+| --- | --- | --- |
+| 本节定位＋接线守则（接错会烧板，动手前先读完）＋正确引脚与数法 | 网络彻底不通、WiFi 配挂、系统起不来时，串口是唯一还能操作系统的通道；开机卡住用串口日志看最后一行停在哪儿、比临时找显示器快，这也是「排障顺序」第 0 步的执行手段。电脑端终端软件与参数（COM 号、115200 8N1、Flow control 必须 None）归 `rpi-ssh.md`，本节只管 Pi 侧。【守则】Pi 的 GPIO 是 **3.3V 电平**，灌 5V 会烧板；只接三根线 TX、RX、GND，模块的 VCC/3V3/5V **一概不接**——Pi 已由其自身电源供电，用模块供电轻则不工作、重则烧板；TX/RX 必须**交叉**（Pi 发→模块收、Pi 收→模块发），同名相连只会乱码或全无输出；多数 CH340G/CP2102 模块的 3.3V/5V 拨码决定模块 TX 的空闲电平：**即使不接 VCC 也要拨到 3.3V 档**，否则模块由 USB 供电时 TX 输出仍是 5V、直接伤 Pi GPIO——最常被忽略的烧毁路径 `[待验证]`。【引脚】**pin 8（GPIO14，UART0 TXD）→ 模块 RX；pin 10（GPIO15，UART0 RXD）← 模块 TX；pin 6（GND）↔ GND**。网上教程写成 pin 14/15 的是 GND 与 GPIO22/ID_SD，接了不工作甚至损坏。数法：带**方形焊盘**的角是 pin 1（其余焊盘都圆），偶数号同侧、奇数号另一侧各自从 pin 1 那角往外数，pin 8 与 pin 10 同在偶数排、中间隔着另一排的 pin 9；板上 pin 6/9/14/20/25/30/34 都是 GND，接地随便挑。完整引脚表与电气参数以 `rpi-gpio-pinout.md` 为准 | `[事实]`+`[待验证]` |
+| 控制台走 mini-UART，参考时钟动态／串口端到端已打通 | `readlink /sys/class/tty/ttyS0/device` → **`3f215040.serial`**＝AUX mini-UART（PL011 在 `7e201000`、已被蓝牙占走）；`vcgencmd measure_clock core` → **400 MHz**、`scaling_governor`=**`ondemand`**、config.txt **只有 `enable_uart=1`（第 49 行）、无 `core_freq` 也无 `force_turbo`** → core 时钟随负载变、mini-UART 分频跟着变、115200 会漂——表现即排障表的「满屏乱码」，**而且它不是接线错**。常见修法 `core_freq=250`（钉住参考时钟）属固件层、必须重启；`[待验证]` 加完长时间传输是否不再漂、250 与当下 400 的差是否在别处留副作用。**鉴别顺序：先按接线三查（交叉/共地/COM 号），确认无误再怀疑这条**。`[对端实测]` 2026-10-19 16:20 COM9 空载发 CR 收到**完全干净**的 `<主机名> login:`、连发两次逐字节相同 → 漂移**空载未复现**、负载下未测；**不要照它去改 config.txt**，真撞乱码再动。同日 16:20 三根线（pin 8→模块 RX、pin 10←模块 TX、pin 6↔GND，**模块 VCC 不接**）＋电脑侧 115200 8N1 Flow=None，发一个 CR 即回登录提示符：**② 摘掉 `console=tty1` 后，串口确实是唯一非网络控制台**——由推断变实测。⚠️ 登录提示符里带**主机名**，贴日志或截图前按 `docs/README.md` 第五节处理 | `[板上实测]`+`[对端实测]`+`[待验证]` |
+| 使能与内核输出：内核消息走串口已通，挡住它的是 loglevel 不是线／其余使能事项 | 2026-10-19 16:35 `[对端实测]`（电脑侧 COM9 全程录字节，板侧同一时刻打时间戳）：本板 `/proc/sys/kernel/printk` 默认 **`3 4 1 3`**（console_loglevel=3）。三条对照：`<0>QODER-EMERG-CTRL` 在默认 3 下**出**（`16:35:36.333`，`[   6993.706657]`）；`<6>QODER-INFO-AT3` **不出**；`sudo dmesg -n 7` 后 `<6>` **出**（`16:35:43.552`），验完已恢复 `3 4 1 3`。→ **`console=ttyS0,115200` 在位（dmesg 有 `printk: legacy console [ttyS0] enabled`）也照样看不到 info/warning 级内核消息，默认只放行 0~2**；想看临时 `sudo dmesg -n 7`、验完 `-n 3` 改回；**排查「起不来」优先看 `<0>`/`<1>`/`<2>` 级，不需要动 loglevel**。附带：这些行逐字符干净、距 boot 约 2 小时（时间戳 6993 秒），mini-UART 漂移仍未复现。`cmdline.txt` 含 `console=serial0,115200` 时串口能出登录提示符已实测（`[对端实测]` 16:20，两次逐字节相同），但**内核各阶段启动日志本板未复验**——② 已改过 cmdline、这次是接好后发的 CR 没赶上开机输出，要看完整启动日志得重启并同时开着串口。`enable_uart=1` 之外无头串口调试常配 `dtoverlay=disable-bt` 把 PL011 让出来（3B 的 PL011 默认归蓝牙）；**两者叠加的确切行为本板未实测**，关蓝牙后 `serial0` 指向哪个控制器、控制台会不会换端口都要重新读，别照抄 `[待验证]`。想同时在内核 tty1 也看到日志可追加 `console=tty1`，并存写法 `console=serial0,115200 console=tty1 systemd.unit=multi-user.target` `[待验证]`。串口登录账户与 SSH 同一个、改密码同步 `[待验证]`。用途：改 WiFi 配置（`raspi-config` → Interface Options）、改密码、装包、看日志、起不来时看最后一行卡在哪 | `[对端实测]`+`[待验证]` |
+| 串口排障（Pi 侧可见的现象） | 全空白按键无反应＝TX/RX 没交叉、没接 GND、或 COM 号选错（电脑侧）；满屏乱码＝波特率不对、没交叉、或波特率未锁（mini-UART 动态 core 时钟，见上）；只有回显没有输出＝TX/RX 反了；完全无反应＝板子没启动、供电不足、模块坏、**或电脑侧根本没枚举出口**——后者属物理层（线/口/CC），判据与排查归 `rpi-ssh.md` 第八节「找到口」；能登录但看不到内核消息＝**不是接线**，printk 默认 3 只放行 emerg/alert/crit，临时 `sudo dmesg -n 7` 即出、验完 `-n 3`；输出到一半断＝USB 延长线或供电不足，换短线换口 | 判读 |
 
 ## 无头预置与持久化
-
-- `[待验证]` **Bookworm 及之后的镜像不再读 boot 分区的 `wpa_supplicant.conf`**，老办法静默失效；预置 WiFi 要用 Raspberry Pi Imager 的高级设置，或挂载 rootfs 写 NetworkManager keyfile。官方原文（`documentation/asciidoc/computers/getting-started/setting-up.adoc`）：「Previous versions of Raspberry Pi OS made use of a `wpa_supplicant.conf` file, which can be placed into the boot folder to configure wireless network settings. This functionality isn't available from Raspberry Pi OS *Bookworm* and onwards.」`[待验证]` 只针对**这块板子的镜像是否已在 Bookworm 及之后**，不针对该行为本身。
-- keyfile 路径：`/etc/NetworkManager/system-connections/*.nmconnection`，权限必须 `600`，属主 `root:root`，否则 NM 拒绝加载。`[待验证]`
-- dhcpcd 系写 `/etc/dhcpcd.conf`。`[待验证]`
-- 版本分叉必须先判定，命令：`cat /etc/os-release`、`systemctl is-active NetworkManager dhcpcd systemd-networkd`。
-- Pi 侧用 `raspi-config` → Network Options 也可完成，但无头场景一次性预置更快。
+| 事项 | 内容 | 档 |
+| --- | --- | --- |
+| boot 预置 WiFi 已失效／keyfile 与 dhcpcd 写法 | **Bookworm 及之后镜像不再读 boot 分区的 `wpa_supplicant.conf`**，老办法静默失效；预置要用 Imager 高级设置，或挂载 rootfs 写 NM keyfile。官方原文（`setting-up.adoc`）：「Previous versions of Raspberry Pi OS made use of a `wpa_supplicant.conf` file… This functionality isn't available from Raspberry Pi OS *Bookworm* and onwards.」`[待验证]` 只针对**这块板的镜像是否已在 Bookworm 及之后**（本板代际读数见「首轮板上基线」），不针对该行为本身。keyfile：`/etc/NetworkManager/system-connections/*.nmconnection`，权限必须 `600`、属主 `root:root`，否则 NM 拒绝加载 `[待验证]`；dhcpcd 系写 `/etc/dhcpcd.conf` `[待验证]`。版本分叉先判定：`cat /etc/os-release`、`systemctl is-active NetworkManager dhcpcd systemd-networkd`；`raspi-config` → Network Options 也能完成，但无头场景一次性预置更快 | `[待验证]` |
 
 ## SSH 服务端
-
-- 是否开箱就有 SSH 与默认账户绑定，见「镜像与默认账户基线」——已由官方文档裁决：当前镜像**默认不启用 SSH、也不预置 `pi`**，`pi`/`raspberry` 直连只适用于早期镜像。这块板子属于哪一边仍未实测，用基线节那四条命令落实。
-- 无头（不接显示器）启用 SSH 的官方预置法：boot 分区**同时**放一个空的 `ssh` 文件与 `userconf.txt`（内容 `<用户名>:<密码哈希>`，哈希用 `openssl passwd -6 '<密码>'` 生成）。只放 `ssh` 不生效——新镜像没有可登录的账户，sshd 起来也没人进得去。出处：`documentation/asciidoc/computers/getting-started/setting-up.adoc` 的「Manual setup for SSH」。`[待验证]` 该机制在 Bookworm 与 Trixie 上的文件名/路径是否一致，未上板确认。
-- 已在系统内：`sudo systemctl enable --now ssh`，官方另给两条等价入口——`touch /boot/firmware/ssh` 后重启，或桌面 Control Centre → Interfaces / `raspi-config` → `3 Interface Options → I1 SSH`（`documentation/asciidoc/computers/configuration/interfaces.adoc`）。用 `ss -tlnp 'sport = :22'` 确认在听、`systemctl is-enabled ssh` 确认开机自启。
-- 控制面统一为「电脑主动连 Pi」，Pi 反向连出不推荐；地址用 IP（本文既有决策）。
-- 公钥登录在 Pi 侧的落点：公钥进 `<用户>` 的 `~/.ssh/authorized_keys`，目录 `700`、文件 `600`，属主是该用户本身。权限不对时 sshd 会**静默拒绝公钥**、退回密码提示，看起来像「公钥没生效」。核查：`sudo ls -ld ~/.ssh ~/.ssh/authorized_keys`。
-- 关闭密码登录（`/etc/ssh/sshd_config` 里 `PasswordAuthentication no`）的顺序是硬约束：**先在串口或本地控制台留着一条能改回来的通道**，再用新会话验公钥能进；只改完就断开当前会话，一旦公钥没生效就只能走串口救砖。改后 `sudo systemctl restart ssh`。`[待验证]` 部分镜像还有 `sshd.service` 命名差异，`systemctl status ssh sshd` 两个都看一眼。
-- 电脑侧的操作全部归 `rpi-ssh.md`：客户端选择与 PATH 差异、`~/.ssh/config` 的 `Host pi` 别名、必须显式写 `User`、known_hosts 预置、密钥复用与不启用 ssh-agent、公钥推送的具体命令、scp/WinSCP、PuTTY 串口参数。本文不重复，避免两处改一处漏改。
+| 事项 | 内容 | 档 |
+| --- | --- | --- |
+| 开箱有无 SSH／无头预置／已在系统内与确认 | 与「镜像与默认账户基线」绑定：当前镜像**默认不启用 SSH、也不预置 `pi`**，`pi`/`raspberry` 直连只适用早期镜像——本板落点已由「首轮板上基线」`[板上实测]` 裁完（`sshd` enabled、非 boot 预置法开的）。预置法：boot 分区**同时**放空 `ssh` 与 `userconf.txt`（`<用户名>:<密码哈希>`，`openssl passwd -6 '<密码>'` 生成）；只放 `ssh` 不生效——sshd 起来也没人进得去（`setting-up.adoc`「Manual setup for SSH」）；Bookworm/Trixie 上文件名路径是否一致未上板 `[待验证]`。系统内：`sudo systemctl enable --now ssh`；官方另两条等价入口：`touch /boot/firmware/ssh` 后重启，桌面 Control Centre → Interfaces / `raspi-config` → `3 Interface Options → I1 SSH`。在听：`ss -tlnp 'sport = :22'`；自启：`systemctl is-enabled ssh`。控制面统一「电脑主动连 Pi」，Pi 反向连出不推荐；地址用 IP（取舍见基线节） | `[板上实测]`+`[待验证]`＋命令 |
+| 公钥落点与权限／关密码登录（硬约束顺序） | 公钥进 `<用户>` 的 `~/.ssh/authorized_keys`，目录 `700`、文件 `600`、属主是该用户本人；权限不对时 sshd **静默拒绝公钥**、退回密码提示，看起来像「公钥没生效」——核查 `sudo ls -ld ~/.ssh ~/.ssh/authorized_keys`。本板该现象**尚未观察到**（首轮失败实因是钥内容不一致），此条维持 `[待验证]`。关密码登录：**先在串口或本地控制台留着一条能改回来的通道**，再用新会话验公钥能进；只改完就断开当前会话，一旦公钥没生效只能走串口救砖。改 `/etc/ssh/sshd_config` 的 `PasswordAuthentication no` 后 `sudo systemctl restart ssh`；部分镜像 `sshd.service` 命名有差异，`systemctl status ssh sshd` 两个都看一眼 `[待验证]` | `[待验证]` |
+| 电脑侧边界 | 客户端选择与 PATH 差异、`~/.ssh/config` 的 `Host pi` 别名、必须显式写 `User`、known_hosts 预置、密钥复用与不启用 ssh-agent、公钥推送命令、scp/WinSCP、PuTTY 串口参数——**全部归 `rpi-ssh.md`**，本文不重复，避免两处改一处漏改 | — |
 
 ## 网页终端 ttyd（Pi 侧）
-
-电脑或手机浏览器连的是这一段；消费侧约束（要走网络、默认无密码）归 `rpi-ssh.md`。
-
-- `[待验证]` 安装：`sudo apt install ttyd`。本仓无任何实测，`rpi-ssh.md` 的「是否留档 ttyd」一条以此节是否存在为前提。
-- `[待验证]` 起一次性终端：`ttyd -p 7681 -W bash`（`-W` 允许输入，否则只读）；浏览器开 `http://<Pi 的 IP>:7681`。
-- `[待验证]` 常驻用 systemd unit，端口占用与防火墙同样在这台机器上处理：
-
-  ```ini
-  [Unit]
-  Description=ttyd web terminal
-  After=network.target
-
-  [Service]
-  ExecStart=/usr/bin/ttyd -p 7681 -W bash
-  Restart=on-failure
-  User=<用户>
-
-  [Install]
-  WantedBy=multi-user.target
-  ```
-
-  `User=<用户>` 要与实际账户一致（基线一节已裁决新镜像不预置 `pi`，账户名以板上 `ls /home` 实测为准），账户基线未落实前不要启用。
-- 默认**无认证**，只在受信局域网内开，不做公网映射；不需要时 `sudo systemctl disable --now ttyd` 并删 unit。
+| 事项 | 内容 | 档 |
+| --- | --- | --- |
+| 安装、一次性终端与 systemd 常驻 unit | `sudo apt install ttyd`（本仓无任何实测，`rpi-ssh.md`「是否留档 ttyd」一条以本节为前提）；`ttyd -p 7681 -W bash`（`-W` 允许输入，否则只读），浏览器开 `http://<Pi 的 IP>:7681`；端口占用与防火墙同样在这台机器上处理。常驻 unit（`/etc/systemd/system/ttyd.service`）：`[Unit] Description=ttyd web terminal`、`After=network.target`；`[Service] ExecStart=/usr/bin/ttyd -p 7681 -W bash`、`Restart=on-failure`、`User=<用户>`；`[Install] WantedBy=multi-user.target`——unit 内容照抄未上板，启用前先跑一次性命令确认能起 | `[待验证]` |
+| `User=` 与安全 | `User=<用户>` 要与实际账户一致（基线已裁决新镜像不预置 `pi`，账户名以板上 `ls /home` 实测为准），账户基线未落实前不要启用；默认**无认证**——只在受信局域网内开、不做公网映射，不需要时 `sudo systemctl disable --now ttyd` 并删 unit；消费侧约束（要走网络）归 `rpi-ssh.md` | `[待验证]` |
 
 ## 排障顺序
-
-按顺序定位，每步都有明确判据，不要跳：
-
-0. 系统在不在跑：接上串口看有没有滚动到登录提示符。这一步能把「系统没起来/卡在服务」与「系统活着但网络不通」分开，是后面所有步骤的前提；串口本身没输出则回到「串口排障」表。没有 USB-TTL 模块时跳过本步。
-1. 链路层：主通道是 WiFi，先 `sudo iw dev wlan0 link` 判是否 `Connected` 并看 `signal`/`frequency`；走有线时才 `ip link show eth0` 看 `NO-CARRIER`、`sudo ethtool eth0 | grep -i link` 判 `Link detected: yes`。`[板上实测]` 2026-10-19 这两条都要带 `sudo`（`iw`、`ethtool` 在 `/usr/sbin`，SSH 非交互 PATH 里没有）；本板当时实测 `sudo ethtool eth0` → `Link detected: no`、`Speed: Unknown!`，即**网线没插**，所以有线侧的带宽结论仍属未验。这一层不过，后面全部无意义。
-2. 地址：`ip -4 a` → WiFi 正常应拿到路由器网段（如 `192.168.1.x`）；eth0 直连场景才有 `10.99.`（静态生效）、`192.168.137.`（ICS DHCP）、`169.254.`（link-local 兜底）；全无 = 取址失败，查 `journalctl -u NetworkManager --no-pager | tail -40`。
-3. 路由：`ip route` → 应有一条 `default via <路由器或ICS地址> dev wlan0` 或 `dev eth0`，且 `ip route get 10.99.0.1` 回 `dev eth0` 且不含 `via`。
-4. 服务：`ss -tlnp 'sport = :22'`、`systemctl is-active ssh`。
-5. 出网：先 `ping -c 2 223.5.5.5`（绕 DNS 测纯 IP 通路），再 `getent hosts archive.raspberrypi.org`（只测 DNS）。两者分离才能判断是路由坏了还是解析坏了。
+| 步 | 问什么 | 命令与判读 |
+| --- | --- | --- |
+| 0／1 | 系统在不在跑／链路层 | 按顺序定位，每步都有明确判据，不要跳。**0**：接串口看有没有滚动到登录提示符——分清「系统没起来/卡在服务」与「系统活着但网络不通」，是后面所有步骤的前提；串口本身没输出回「串口排障」；没有 USB-TTL 模块时跳过本步。**1**：主通道 WiFi 先 `sudo iw dev wlan0 link` 判 `Connected` 并看 `signal`/`frequency`；走有线才 `ip link show eth0` 看 `NO-CARRIER`、`sudo ethtool eth0 \| grep -i link` 判 `Link detected: yes`。`[板上实测]` 2026-10-19 这两条都要带 `sudo`（`iw`/`ethtool` 在 `/usr/sbin`）；本板 `sudo ethtool eth0` → `Link detected: no`、`Speed: Unknown!`＝**网线没插**，有线侧带宽结论仍属未验。这一层不过，后面全部无意义 |
+| 2／3 | 地址／路由 | **2** `ip -4 a`：WiFi 正常应拿到路由器网段（如 `192.168.1.x`）；eth0 直连场景才有 `10.99.`（静态）、`192.168.137.`（ICS DHCP）、`169.254.`（link-local）；全无＝取址失败，查 `journalctl -u NetworkManager --no-pager \| tail -40`。**3** `ip route` 应有一条 `default via <路由器或ICS地址> dev wlan0` 或 `dev eth0`；`ip route get 10.99.0.1` 回 `dev eth0` 且不含 `via` |
+| 4／5 | 服务／出网 | **4** `ss -tlnp 'sport = :22'`；`systemctl is-active ssh`。**5** 先 `ping -c 2 223.5.5.5`（绕 DNS 测纯 IP 通路），再 `getent hosts archive.raspberrypi.org`（只测 DNS）——两者分离才能判断是路由坏了还是解析坏了 |
 
 ## 出网经 VPN：电脑用 PureVPN，Pi 复用同一订阅
-
-前提是电脑只有经 VPN 客户端才有外网，Pi 上没有对应客户端可用。先分清电脑侧是哪一类，两条路的可行度不同：
-
-- 应用层代理型（Clash/mihomo、v2rayN、sing-box 客户端等）：在**本机**监听 `127.0.0.1:7890`/`10808` 之类端口，不创建网卡。Pi 必须把流量显式送进这个端口。
-- 隧道型（WireGuard、企业 SSL VPN）：创建虚拟网卡并接管默认路由。这种才谈得上「共享」，且共享行为由隧道模式决定，不可靠。
-
-判定（电脑 PowerShell）：`Get-NetTCPConnection -State Listen -LocalPort 7890,7891,10808,10809 -ErrorAction SilentlyContinue` 有输出即代理型；`Get-NetAdapter` 里出现 wintun / WireGuard / TAP 适配器即隧道型。两者可能同时存在。
-
-### 路线 A：把电脑上的本地代理开放给局域网，Pi 指向它（仅适用代理型客户端）
-
-1. 电脑侧把客户端的 `allow-lan` 设为 `true`，监听地址从 `127.0.0.1` 改为 `0.0.0.0`，并在 Windows 防火墙放行该端口（入站规则，作用域限家庭/局域网）。`[待验证]`
-2. 确认端口对局域网可达（在 Pi 上，不要只在电脑上看）：`/dev/tcp` 探测或 `curl -x http://<电脑IP>:7890 -sI https://archive.raspberrypi.org`，返回 200 才算通。
-3. Pi 侧按程序分别配，代理变量**不会**影响 ping、SSH、测速这类不走 HTTP 的流量——这是最容易误判成「配了没生效」的点：
-   - apt：`/etc/apt/apt.conf.d/95proxy` 写 `Acquire::http::Proxy "http://<电脑IP>:7890";` 与对应 https 行。
-   - 全局 shell：`/etc/environment` 写小写与大写两套 `http_proxy`/`https_proxy`/`no_proxy`（多数工具读其中一种，两种都写省事）。
-   - git：`git config --global http.proxy http://<电脑IP>:7890`。
-   - pip：`pip config set global.proxy http://<电脑IP>:7890`。
-4. 局限：Pi 上任何不经上述配置的程序（自写脚本、systemd 服务、容器）依然直连不通；要全流量见路线 B。
-5. **本例不适用**：PureVPN 的 Windows 客户端属隧道型，且不在本机开可用的 HTTP/SOCKS 端口，路线 A 没有下手的地方。保留此节只为将来换用 Clash 类客户端。
-
-### 路线 B：Pi 上跑 mihomo/sing-box，TUN 透明接管
-
-- 适合需要「Pi 上所有程序默认就走代理」的形态，也是长期最干净的方案。**前提是有通用订阅链接可导入**——PureVPN 不提供，本例走不通，实际采用路线 C；本节保留给将来换用 Clash 类服务。
-- 先定架构，它决定下载哪个包：`uname -m` → `armv7l` 用 32 位 arm 包，`aarch64` 用 arm64 包；`[事实]` 3B 是 Cortex-A53（ARMv8），装 32 位系统时也显示 `armv7l`。
-- 实现方式：`sing-box` 或 `mihomo` 的 tun 块（`enable: true`、`stack: system` 或 `gvisor`），配 systemd 服务开机拉起。`[待验证]`
-- `[待验证]` 真正的失联风险来自 `strict_route`（sing-box 默认开启）：它会重建主路由表并隔离非隧道流量，把局域网里的 SSH 会话一起掐断。开 TUN 前务必先在 Pi 本地控制台或串口验证，或把管理网段排除在隔离之外。相比之下，路线 C 的 wg/openvpn 只加 `/0` 或两条半区路由，网段路由更具体，**不会**掐断已连入的 SSH（详见路线 C 的必查点）。
-- `[待验证]` 另一个自环坑：隧道程序自身连服务端的出站流量必须绕过 TUN，否则自己包自己。
-- `[事实]` 3B 只有 4×1.2GHz Cortex-A53，不要拿它当高吞吐出口设备；apt/pip/git 这类吞吐足够。`[待验证]` BCM2837 是否启用 ARMv8 加密指令扩展，看 `grep -m1 Features /proc/cpuinfo` 里有没有 `aes`，它直接影响加解密实测速率。
-
-### 不要顺手做的事
-
-- 别指望 ICS 能把电脑的 VPN 一起共享出去。原因分两层：代理型客户端只在传输层之上工作，ICS 在 IP 层做 NAT，Pi 的流量直接从物理网卡发出、根本不经过客户端；隧道型若把虚拟适配器作为出口接口，ICS 通常不接受虚拟网卡。两种情形 Pi 都拿不到 VPN 出口。`[待验证]`
-- 凭据、订阅地址、节点列表、PSK 一律不进仓库，也不写进 `.ai/` 任何文档；只写形态与命令。
-
-### 路线 C：Pi 直接持订阅（PureVPN，当前采用）
-
-外部依据（PureVPN 官方应用商店页，2026-10 查得）：支持 OpenVPN 与 WireGuard（后者在部分区域/版本提供）；一个账号同时 10 台设备。未查到面向 Linux/ARM 的官方客户端，因此 Pi 侧不装它的 App，直接用通用协议客户端。`[待验证]`
-
-前置（会员后台，两步都要，缺一步就白折腾）：
-
-1. 在后台找「Manual setup / Setup without apps / Router」入口，下载 OpenVPN（`.ovpn`）或 WireGuard（`.conf`）配置。若后台压根不给导出配置，Pi 这条路走不通——PureVPN 没有通用订阅链接可喂给 mihomo/sing-box，此时只能找客服要配置文件，或接受 Pi 不走 VPN。
-2. 单独设置 **OpenVPN / 配置文件专用密码**。多数此类服务商的 OpenVPN 凭据与网站登录密码不是同一个，用网站密码会一直 `AUTH_FAILED`。`[待验证]`
-
-WireGuard 优先（3B CPU 弱，wg 的 ChaCha20 明显比 OpenVPN AES 省）：
-
-```
-sudo apt install wireguard-tools
-sudo cp pure-wg.conf /etc/wireguard/wg0.conf && sudo chmod 600 /etc/wireguard/wg0.conf
-sudo systemctl enable --now wg-quick@wg0
-```
-
-OpenVPN 备选（配置放 `/etc/openvpn/client/`，unit 名是 `openvpn-client@<文件名不含扩展>`）：
-
-```
-sudo apt install openvpn
-printf '%s\n%s\n' '<账号>' '<OpenVPN专用密码>' | sudo tee /etc/openvpn/auth.txt
-sudo chmod 600 /etc/openvpn/auth.txt
-# 配置里加：auth-user-pass /etc/openvpn/auth.txt
-sudo systemctl enable --now openvpn-client@pure
-```
-
-Pi 侧三个必查点：
-
-- **SSH 不会被掐**：`[事实]` 服务端下发的 `redirect-gateway def1` 只替换默认路由（`0.0.0.0/1`+`128.0.0.0/1`），你从 `192.168.1.0/24` 连进来的会话命中的是那条更具体的网段路由，隧道起来后依然可达。但 DNS 会被推给 VPN，局域网内主机名解析可能失效——再次印证本文「连接只用 IP」的决策。
-- **隧道断开即裸连**：默认行为是隧道一掉，流量立刻从 wlan0 直出。要防泄漏就显式处理（wg 侧靠 `AllowedIPs` + 不给 wlan0 默认路由，或 OpenVPN 侧配脚本/防火墙），不做也可以，但要知道没保护。
-- **验证三连**（任一条不满足就是没通，别看客户端日志说 success）：`wg show` 或 `ip -4 a` 有 `wg0`/`tun0`；`ip route | grep default` 的 `dev` 是隧道接口；`curl -s ifconfig.me` 返回的出口 IP 与电脑侧一致。
-- `[待验证]` 吞吐预期：3B 是 4×1.2GHz Cortex-A53，wg 可跑几十 Mbps 量级、OpenVPN AES 更低，用于 apt/pip/git 足够，不要拿它当下载机或测速对象。先确认加密指令扩展：`grep -o aes /proc/cpuinfo`。
+| 项 | 内容 | 档 |
+| --- | --- | --- |
+| 前提与两类客户端＋判定（电脑 PowerShell） | 前提：电脑只有经 VPN 客户端才有外网，Pi 没有对应客户端可用。先分清是哪类：**应用层代理型**（Clash/mihomo、v2rayN、sing-box 客户端等，在本机监听 `127.0.0.1:7890`/`10808` 之类端口、不创建网卡，Pi 必须把流量显式送进这个端口）／**隧道型**（WireGuard、企业 SSL VPN，创建虚拟网卡并接管默认路由——这种才谈得上「共享」，且共享行为由隧道模式决定、不可靠）。判定：`Get-NetTCPConnection -State Listen -LocalPort 7890,7891,10808,10809 -ErrorAction SilentlyContinue` 有输出即代理型；`Get-NetAdapter` 出现 wintun／WireGuard／TAP 适配器即隧道型；两者可能同时存在 | 命令 |
+| 路线 A（仅代理型客户端） | ① 电脑侧客户端 `allow-lan` 设 `true`、监听 `127.0.0.1` 改 `0.0.0.0`、Windows 防火墙放行该端口（入站规则、作用域限家庭/局域网）`[待验证]`；② 端口对局域网可达要在 **Pi 上**确认（不要只在电脑上看）：`/dev/tcp` 探测或 `curl -x http://<电脑IP>:7890 -sI https://archive.raspberrypi.org`，返回 200 才算通；③ Pi 侧按程序分别配——apt：`/etc/apt/apt.conf.d/95proxy` 写 `Acquire::http::Proxy "http://<电脑IP>:7890";` 与对应 https 行；全局 shell：`/etc/environment` 写小写与大写两套 `http_proxy`/`https_proxy`/`no_proxy`（多数工具读其中一种，两种都写省事）；git：`git config --global http.proxy http://<电脑IP>:7890`；pip：`pip config set global.proxy http://<电脑IP>:7890`。**代理变量不影响 ping/SSH/测速**这类不走 HTTP 的流量——最易误判成「配了没生效」；④ 局限：Pi 上任何不经上述配置的程序（自写脚本、systemd 服务、容器）依然直连不通，全流量见 B；⑤ **本例不适用**：PureVPN 的 Windows 客户端属隧道型、不在本机开可用的 HTTP/SOCKS 端口，A 没有下手的地方——保留本节只为将来换 Clash 类客户端 | `[待验证]` |
+| 路线 B（Pi 上 mihomo/sing-box TUN 透明接管）／不要顺手做的事 | 适合「Pi 上所有程序默认就走代理」、长期最干净，**前提是有通用订阅链接可导入——PureVPN 不提供，本例走不通，实际采用 C**；本节留给将来换 Clash 类服务。先定架构（决定下载哪个包）：`uname -m` → `armv7l` 用 32 位 arm 包、`aarch64` 用 arm64 包；3B 是 Cortex-A53（ARMv8），装 32 位系统时也显示 `armv7l` `[事实]`。实现：`sing-box` 或 `mihomo` 的 tun 块（`enable: true`、`stack: system` 或 `gvisor`）＋ systemd 开机拉起 `[待验证]`。**失联风险来自 `strict_route`**（sing-box 默认开）：重建主路由表并隔离非隧道流量，把局域网 SSH 一起掐断——开 TUN 前务必先在 Pi 本地控制台或串口验证，或把管理网段排除在隔离之外；相比路线 C 的 wg/openvpn 只加 `/0` 或两条半区路由、网段路由更具体，**不会**掐断已连入的 SSH（见 C 必查点）。自环坑：隧道程序自身连服务端的出站必须绕过 TUN，否则自己包自己。吞吐：3B 4×1.2GHz 不要当高吞吐出口设备，apt/pip/git 足够 `[事实]`；BCM2837 是否启用 ARMv8 加密扩展看 `grep -m1 Features /proc/cpuinfo` 里有没有 `aes`（直接影响加解密实测速率）`[待验证]`。**别指望 ICS 能把电脑的 VPN 一起共享出去**——代理型客户端只在传输层之上工作、ICS 在 IP 层做 NAT，Pi 流量从物理网卡直发不经客户端；隧道型若把虚拟适配器当出口，ICS 通常不接受——两种情形 Pi 都拿不到 VPN 出口。凭据、订阅地址、节点列表、PSK 一律不进仓库也不写 `.ai/`，只写形态与命令 | `[待验证]`+`[事实]` |
+| 路线 C（Pi 直接持订阅，**当前采用**） | 外部依据：PureVPN 官方应用商店页（2026-10 查得）——支持 OpenVPN 与 WireGuard（后者视区域/版本提供）、一个账号同时 10 台设备；未查到面向 Linux/ARM 的官方客户端，故 Pi 不装它的 App、直接用通用协议客户端。前置（会员后台两步都要，缺一步白折腾）：① 后台找「Manual setup / Setup without apps / Router」入口下载 OpenVPN（`.ovpn`）或 WireGuard（`.conf`）——**若压根不给导出配置，Pi 这条路走不通**（PureVPN 没有通用订阅链接可喂 mihomo/sing-box），只能找客服要配置文件或接受 Pi 不走 VPN；② 单独设置 **OpenVPN/配置文件专用密码**——多数此类服务商的 OpenVPN 凭据与网站登录密码不是同一个，用网站密码会一直 `AUTH_FAILED` `[待验证]` | `[待验证]` |
+| C 命令：WireGuard 优先（3B CPU 弱，wg 的 ChaCha20 明显比 OpenVPN AES 省）／OpenVPN 备选 | wg：`sudo apt install wireguard-tools`；`sudo cp pure-wg.conf /etc/wireguard/wg0.conf && sudo chmod 600 /etc/wireguard/wg0.conf`；`sudo systemctl enable --now wg-quick@wg0`。openvpn（配置放 `/etc/openvpn/client/`，unit 名 `openvpn-client@<文件名不含扩展>`）：`sudo apt install openvpn`；`printf '%s\n%s\n' '<账号>' '<OpenVPN专用密码>' \| sudo tee /etc/openvpn/auth.txt` 后 `sudo chmod 600 /etc/openvpn/auth.txt`；配置里加 `auth-user-pass /etc/openvpn/auth.txt`；`sudo systemctl enable --now openvpn-client@pure` | 命令 |
+| C 必查点与验证三连 | **SSH 不会被掐**：服务端下发的 `redirect-gateway def1` 只替换默认路由（`0.0.0.0/1`+`128.0.0.0/1`），从 `192.168.1.0/24` 连进来的会话命中的是那条更具体的网段路由，隧道起来后依然可达 `[事实]`；但 DNS 会被推给 VPN、局域网内主机名解析可能失效——再次印证「连接只用 IP」的决策。**隧道断开即裸连**：默认隧道一掉流量立刻从 wlan0 直出；防泄漏要显式处理（wg 侧 `AllowedIPs`＋不给 wlan0 默认路由，或 OpenVPN 侧配脚本/防火墙），不做也可以但要知道没保护。**验证三连**（任一条不满足就是没通，别看客户端日志说 success）：`wg show` 或 `ip -4 a` 有 `wg0`/`tun0`；`ip route \| grep default` 的 `dev` 是隧道接口；`curl -s ifconfig.me` 返回的出口 IP 与电脑侧一致。吞吐预期 `[待验证]`：wg 可跑几十 Mbps 量级、OpenVPN AES 更低，apt/pip/git 足够，不要当下载机或测速对象；先确认加密指令扩展 `grep -o aes /proc/cpuinfo` | `[事实]`+`[待验证]` |
 
 ## 对端环境（压缩）
-
-- 电脑侧要配合的就两件事：给直连那块网卡静态 `10.99.0.1/24` 且**网关留空**，或不配让它 APIPA 到 `169.254.`。
-- ICS 能提供 DHCP + NAT 让 Pi 经电脑 WiFi 出网，代价是 Windows 更新后共享勾选易被清除，属对端脆弱点，不列入 Pi 依赖。
+| 事项 | 内容 |
+| --- | --- |
+| 电脑侧只需配合两件事 | 给直连那块网卡静态 `10.99.0.1/24` 且**网关留空**；或不配、让它 APIPA 到 `169.254.`。ICS 能提供 DHCP+NAT 让 Pi 经电脑 WiFi 出网，代价是 Windows 更新后共享勾选易被清除——对端脆弱点，不列入 Pi 依赖 |
 
 ## 与 VPN 共存
-
-- `[事实]` 同 `/24` 直连不受 VPN 影响：路由最长前缀匹配下，本地网段路由压过 VPN 注入的 `/0`（WireGuard `AllowedIPs=0.0.0.0/0`）或 `0.0.0.0/1`+`128.0.0.0/1`（OpenVPN `redirect-gateway def1`）。
-- 断言命令（电脑侧）：`Find-NetRoute -RemoteIPAddress 10.99.0.2`，`InterfaceAlias` 应为物理以太网适配器，`IPv4NextHop` 为空或链路本地。
-- `[待验证]` 例外：企业 VPN 显式加覆盖私有网段的路由，或启用防泄漏丢弃非隧道流量。此时找 split-tunnel 豁免或换 `172.28.0.0/24`。
+| 断言 | 内容 | 档 |
+| --- | --- | --- |
+| 同 `/24` 直连不受 VPN 影响／断言命令（电脑侧） | 路由最长前缀匹配下，本地网段路由压过 VPN 注入的 `/0`（WireGuard `AllowedIPs=0.0.0.0/0`）或 `0.0.0.0/1`+`128.0.0.0/1`（OpenVPN `redirect-gateway def1`）`[事实]`；例外：企业 VPN 显式加覆盖私有网段的路由、或启用防泄漏丢弃非隧道流量 `[待验证]`——此时找 split-tunnel 豁免或换 `172.28.0.0/24`。断言：`Find-NetRoute -RemoteIPAddress 10.99.0.2` → `InterfaceAlias` 应为物理以太网适配器、`IPv4NextHop` 为空或链路本地 | `[事实]`+`[待验证]`＋命令 |
 
 ## 相关文档
 
-- [`rpi-ssh.md`](./rpi-ssh.md) —— 电脑侧主干：客户端与 `~/.ssh/config`、known_hosts、公钥推送命令、scp/WinSCP、PuTTY 与串口终端参数、RealVNC Viewer。
-- [`rpi-gpio-pinout.md`](../gpio/rpi-gpio-pinout.md) —— 40 针完整引脚表与电气参数；本文只列串口那三根线。
-- [`rpi-gpio-robust.md`](../gpio/rpi-gpio-robust.md) —— GPIO 在什么情况下给出「看似正常实则错误」的结果。
-- [`rpi-status.md`](../hardware/rpi-status.md) —— 观测专章：本文各项配置生效后，用哪几条只读命令确认板子状态、以及哪些读数属假读数。
-- [`rpi-3b-hardware.md`](../hardware/rpi-3b-hardware.md) —— SoC 规格、功耗、型号选型与上手清单。
-- `rpi-headless-access.md`、`rpi-display-headless.md` —— A1 合稿的来源，内容已全部并入本文与 `rpi-ssh.md`，两文件已删除（写作约定：已删的历史源稿不写成链接）。文内若再出现同名提法，属历史记录。
-- ~~待编排会话跨稿同步（V5）：`rpi-ssh.md` 的示例用户名~~ **已完成（2026-10-15，编排会话）**：`rpi-ssh.md` 的 config 由 `User <pi-user>` 改为 `User <用户>`，第一节与第十一节涉及默认账户的两处「待 V5」标注按本裁决落地，`Host pi` 按约定保留为别名。本板镜像落在裁决哪一边仍 `[待验证]`。
+- [`rpi-ssh.md`](./rpi-ssh.md) —— 电脑侧主干：客户端与 `~/.ssh/config`、known_hosts、公钥推送命令、scp/WinSCP、PuTTY 与串口终端参数、RealVNC Viewer。[`rpi-status.md`](../hardware/rpi-status.md) —— 观测专章：本文各项配置生效后，用哪几条只读命令确认板子状态、以及哪些读数属假读数。
+- [`rpi-gpio-pinout.md`](../gpio/rpi-gpio-pinout.md) —— 40 针完整引脚表与电气参数；本文只列串口那三根线。[`rpi-gpio-robust.md`](../gpio/rpi-gpio-robust.md) —— GPIO 在什么情况下给出「看似正常实则错误」的结果。
+- [`rpi-3b-hardware.md`](../hardware/rpi-3b-hardware.md) —— SoC 规格、功耗、型号选型与上手清单；§4.1 本机欠压实录。
+- `rpi-headless-access.md`、`rpi-display-headless.md` —— A1 合稿的来源，内容已全部并入本文与 `rpi-ssh.md`，两文件已删除（已删历史源稿不写成链接；文内再出现同名提法属历史记录）。
+- V5 跨稿同步**已完成**（2026-10-15）：`rpi-ssh.md` 的 config 由 `User <pi-user>` 改为 `User <用户>`、其第一/十一节的「待 V5」标注落地、`Host pi` 保留为别名；本板落点已由「首轮板上基线」裁定。
 
 ## 变更记录
 
-- 2026-10-19（内核通道实测）：「使能与内核输出」新增一条 `[对端实测]`——`<0>` 在默认 loglevel 下出、`<6>` 被挡、抬到 7 后出，三条带时间戳的对照证明**内核消息走串口这条路是通的，挡住它的是 `printk` 的 console_loglevel（本板默认 3）**；排障表加「能登录但看不到内核消息」一行并给出 `dmesg -n 7` / `-n 3` 的临时改法。附带记录：距 boot 约 2 小时时这些行仍逐字符干净，mini-UART 漂移继续未复现。
-- 2026-10-19（串口接通，同日第二轮）：「使能与内核输出」加一条 `[对端实测]`——三根线接 pin 8/10/6、电脑侧 115200 8N1 Flow=None，**COM9 发 CR 即回 `<主机名> login:`**，串口控制台端到端可用；同一条把 mini-UART 波特率漂移的定性收窄成「机制在、**空载未复现**、负载下未测」，并明确**不照它改 `config.txt`**。`console=serial0` 那条由 `[待验证]` 升 `[对端实测]`（只升登录提示符那半句，内核启动日志未复验）；排障表「完全无反应」改为指向 `rpi-ssh.md` 第八节的枚举判据。⚠️ 登录提示符带主机名，外发前按索引层第五节处理。
-- 2026-10-19（开始建物理串口）：「使能与内核输出」新增一条 `[板上实测]`——**本板控制台确实是 mini-UART**（`ttyS0` → `3f215040.serial`），`measure_clock core` = **400 MHz** 且 governor = `ondemand`，`config.txt` 里**没有 `core_freq`/`force_turbo`**，只有 `enable_uart=1`（第 49 行）。→ **排障表里「满屏乱码」这一行多了一个非接线根因：core 时钟随负载动 → 波特率漂**。常见修法 `core_freq=250` 要重启，本板加后是否真不漂 `[待验证]`。原 `disable-bt` 那条拆开保留并补「关蓝牙后 `serial0` 指向要重新读」的警告。
-- 2026-10-19（回答「屏幕现在是不是不能用了」）：「显示输出与无头模式」新增**「①②④ 之后显示层的真实现状」**一节。`[板上实测]` 结论是「**没关死，只是当前没人往屏上画**」：③ 未做所以 `card0-HDMI-A-1` 与 `/dev/dri/card0` 俱在（`status=disconnected` 只代表当下没插线），① 里 `lightdm` 单元本身仍 `enabled`、`labwc`/`wayvnc` 可执行文件都在盘上，② 才是让屏变黑的那一层——`vtcon*/name` 只剩 `(S) dummy device`。判据三条：屏上有没有字看 `vtcon` 不看 `is-enabled lightdm`；`disconnected` ≠ 已禁用 HDMI；**`gpu_mem=16` 没缩掉 `CmaTotal`（仍 256 MB）**，④ 砍的是固件侧 VCHI 不是内核连续内存池。**④ 对真接屏出图的影响仍未实测**，本板从头到尾没插过显示器。回退命令落到该节，未做任何新配置改动。
-- 2026-10-19（关屏 ④ 执行，本窗口经 SSH 三轮重启做 A/B）：新增**「④ 的执行实录」**。`config.txt` 追加 `gpu_mem=16`（备份 `.bak`）后重启——`get_mem` 回 `16M/998M`、`free` total **921 → 970**，③ 没做。**推翻本仓旧口径两处**：① 「④ 只在走完 ③ 之后才谈」不成立，KMS 开着照样能降到 16；② 「`gpu_mem` 在 KMS 下的最小允许值 `[待验证]`」就地升格为「16 可用」。**新查到的代价不在显示在 VCHI**：`gpu_mem=16` 时 `vc_sm_cma_vchi_init` 与 `bcm2835_mmal_vchiq` 报 `-22`、`/dev/video*` 13 个节点整个消失（默认那轮 0 条失败）——本板无相机故当下无感，要用 `rpicam-*`/libcamera 须抬回。方法账一条：本板 journald **非持久**，跨 boot 对照必须改前当场取。顺带照出 ① 的后遗症：`rpi-connect-wayvnc.service` 每 5 秒重试失败刷 `journalctl -p err`，未处理。
-- 2026-10-19（关屏 ①② 执行，本窗口经 SSH 执行）：「显示输出与无头模式」的关屏小节由**方案层升为已执行层**。① `set-default multi-user.target` ＋ `isolate` 当场实测 used 244 → 194（**50 MB，不是旧记的 249**——249 是桌面会话满开时的合计，执行前 wayvnc 已 `inactive`），残留的 portal/wireplumber 经 cgroup 判认为 SSH 自身的 user session；② `disable getty@tty1` ＋ 改写 `cmdline.txt`（删 `console=tty1`/`quiet splash`/`plymouth.ignore-serial-consoles`，逐 token `diff` 核过、仍一整行、`.bak` 留底），再起 `sudo reboot` 复验：新 cmdline 生效、`getty@tty1` `disabled`+`inactive`、串口 getty 仍 `active`、**① 重启后保住**、全新 boot used 136。同时撤回上一条里我自己写错的一句：文件原文是 `console=serial0,115200`，`/proc/cmdline` 显示 `ttyS0` 是设备树 alias 被内核解析，**不是冲突**（判据：比 cmdline 要成对读文件值与运行时值）。`vc4-kms-v3d` 未动（属 ③）。
-- 2026-10-19（分目录）：本篇由 `docs/pi/` 根移入 **`docs/pi/access/`**，跨分类的相对链接改为 `../<分类>/`，指向索引层改为 `../../README.md`；**章号与散文式引用（「`rpi-xxx.md` 第 N 节」）一条未动**——散文只认文件名，而文件名在全仓唯一。分类依据与机检见 `docs/README.md` 第一节。
-
-- 2026-10-19（新增观测专章 + 关屏实测）：① `docs/pi/hardware/rpi-status.md` 成文，本篇「串口控制台」的可用性判据被它引用，「相关文档」补一条指向那篇；② 「显示输出与无头模式」新增**关屏省资源**小节，把本轮实测的 249 MB 桌面栈、`graphical.target → lightdm → labwc → wayvnc` 依赖链、串口 getty 已 active 这一前置条件，以及四档方案（均未执行）落成板上结论——该节此前四条 `hdmi_*` 全是手册层，本篇第一次有「关屏到底省多少」的数。**未做任何配置改动。**
-- 2026-10-19（结构整理）：本篇接入 `docs/README.md` 索引层——篇首改为 `> 用途` / `> 边界` 两行加一条定位说明，证据分档与敏感内容规则**上收到索引层**（内容未删，只是不再在各篇重复定义），新增 `## 本篇结构` 章级目录；「与其他文档的分工」更名为 `## 相关文档`、「状态」更名为 `## 变更记录`（与其余四篇同尾块名目），活引用改成相对链接。**章号与章序未动**：跨篇引用写的是「第 N 节」「§4.1」，重排会全部指错。
-- 2026-10-19（同日续测，本窗口经 SSH 执行）：① **纠正了一条我自己上一轮写错的判断**——`command -v iw` 空曾被读成「本板未装 `iw`/`iwconfig`/`rfkill`/`wpa_cli`/`ethtool`」，实际是**非交互 SSH 的 PATH 不含 `/usr/sbin`**（实测四条，`-tt` 强给 pty 也不补），五个工具在 `/usr/sbin` 全都在，真缺的只有 `tcpdump`；「WiFi 通道」开头据此重写成一节带绝对路径的复查记录，`iw`/`rfkill`/`ethtool` 三处命令统一加 `sudo`，排障顺序第 1 步同步改。② **`sudo iw dev wlan0 get power_save` → `Power save: on`**，且连接侧 `802-11-wireless.powersave` 是 `0 (default)` → 「首轮 WiFi 观察」那三个候选里，省电模式这一支从「未验」升为**前提实测成立**（因果仍未证）；链路质量同时读了：`-48 dBm`、信道 6、`52/58.5 MBit/s`、`wpa_state=COMPLETED`、WiFi 未被 rfkill 软关、蓝牙反而是软关状态（故「3B 蓝牙抢天线」的风险在当前配置下不适用）。nmcli 侧的替代读数与单位坑（`SIGNAL=75` 是 0–100 质量刻度不是 dBm）一并记入。③ **`sudo rfkill list all`、`sudo ethtool eth0`（`Link detected: no`，网线没插）、`sudo wpa_cli status` 三条本板可用**，前提是带 `sudo` 或写绝对路径。④ **netplan 与 NM 共管**这条现状查出来了：`GENERAL.CONNECTION` 是 `netplan-wlan0-<SSID>`、`/etc/netplan/` 有两份 `90-NM-<uuid>.yaml`、nmcli 版本 1.52.1；`nmcli con mod` 会不会写回 netplan **未验**（本轮没做任何修改），要证的时机是真改 powersave 之后。⑤ 属性名一坑：本板 nmcli 的 `802-11-wireless` 属性清单里**没有 `scan-rand-mac-address`**，只有 `mac-address-randomization`，本文原来的回读命令按 `-f` 直接写会报 `invalid field`，已改；那条 `mod` 命令能否被接受仍未试（属改动，留给用户）。⑥ **`iw dev wlan0 link` 用的那次误判也记进流程账**：我拿记忆里「上一次发作时刻」去查 `journalctl --since`，那个时间在本次 boot 之前（01:07 重启过），查的是未来窗口，`-- No entries --` 不构成任何证据——事后取关联日志必须先确认发作与当前 boot 同段，这条已写进「首轮 WiFi 观察」的取证段。
-- 2026-10-19（首轮板上实测，接入轮，本窗口经 SSH 执行）：**本文启用 `[板上实测]` 一档**，此前全文零实测的状态结束。落地的五处：① 「镜像与默认账户基线」新增**首轮板上基线**小节，四条判据全套跑完——Raspbian 13 (trixie)、内核 `6.12.47+rpt-rpi-v7`（32 位 v7，与 3B 相符）、`/home` 无 `pi`、`sshd` **enabled**、boot 分区**无 `ssh`/`userconf.txt`**（→ 本板不是 boot 预置法开的 SSH），V5 那句「本板落在哪一边手册裁不了」就地改为已裁；② 「仍需上板实测」表**三行升格为已核**：KMS **默认启用**（`config.txt` 第 26 行未注释的 `dtoverlay=vc4-kms-v3d` + `/dev/dri/card0`）、`gpu_mem` 实际 `76M` 且 `get_config int` 里无 `gpu_mem` 行（默认推导对上）、`enable_tvout=1` 读到（V1 的文档默认值首次与实测一致）；未动的两行写清了为什么仍未验（DNS 回读——本板仍是 DHCP `/23` `dynamic`；复合视频画面——没插 AV 线）；③ WiFi 节新增**一次约 40 秒整体不可达**的观察（ICMP 与 TCP 同刻对照、发作后 3 分钟 ARP 绑定不换址、`get_throttled=0x50000` 即「发生过欠压+发生过限频」而此刻未限、`dmesg` 里 brcmf/under-voltage 计数 0），**根因未定**，三个候选一个都没排除，判别顺序写明「先换电源」；④ 新增 `/var/log/auth.log` **在本板不可用**（认证记录只在 journald），凡依赖该文件的旧写法都要换；⑤ 「权限不对→sshd 静默拒公钥」这条**本板仍未真正观察到**，首轮那次失败的内容原因是 `authorized_keys` 里的公钥与客户端不是同一把，排障路径见 `rpi-ssh.md` 第五节。**敏感口径本条一并确立**：账户名、主机名、口令、公钥正文、局域网 IP 一律不入库，文档继续用占位符。
-- 2026-10-15（编排会话跨稿同步）：V3 由 `minimax-a` 判「无线芯片是本篇错」，同步时改判为**命名层次差异，两边都引到了官方原文**——产品页与 2016 发布稿写 BCM43438（`raspberrypi.com/products/raspberry-pi-3-model-b` 的 Specification 段；`raspberrypi.com/news/raspberry-pi-3-on-sale`），而 Debian `firmware-brcm80211` 为 3B 提供的是 `brcmfmac43430-sdio.raspberrypi,3-model-b.txt`，即驱动/固件侧归入 43430 一族。接口盘点据此改成双名并列并给出用名规则；排障两处与 WiFi 段同步。顺带把 V3 留作「无法裁决」的 **BLE 裁掉**：官方两处（3B 产品页、《Raspberry Pi product series explained》里 3B 那行「Bluetooth 4.1, Bluetooth Low Energy (BLE)」）都明写 3B 带 BLE，3B+ 发布稿的「加入 BLE」是文案不严谨，不属反证。另记一条：`raspberrypi.com` 的 3B 产品页**并未下架**，V3 报的 404 与本会话早前的 403 一样是抓取被拦，搜索引擎索引里该页规格段完整可读——所以本篇的官方依据不只有旧站。仍是手册层结论，板上复核 `btmgmt -i hci0 info`、`dmesg | grep -i brcmfmac`，无 `[待验证]` 升格。
-- 2026-10-15（V5 手册核对，本窗口）：最后一条未裁决的分歧「新镜像默认账户与 SSH 是否预置」由官方文档裁完，两说不再并存——**当前镜像不预置 `pi`、默认禁用 SSH**（`remote-access/ssh.adoc` 原文「By default, Raspberry Pi OS disables the SSH server.」，账户由 `getting-started/install.adoc` 的 Imager *User* 子标签或 `configuring.adoc` 的首启向导创建）；`pi`/`raspberry` 直连只适用于早期镜像。官方文档自身的滞后解释了说法一为何流传：issue #2537（2022-05-11）首句已写「Now the default user has been removed…」，示例里的 `pi`/`raspberry` 却到 PR #3310（分支 `default-user-retcon`，2023-12-08 合并）才清干净。无头启用 SSH 的官方预置法是 boot 分区**同时**放空 `ssh` 与 `userconf.txt`（`setting-up.adoc` 的「Manual setup for SSH」，哈希用 `openssl passwd -6`），只放 `ssh` 不足以登录。据此本文全部示例用户名改为 `<用户>` 占位（含 ttyd unit 的 `User=`），基线节的探测命令把 `id pi` 换成 `ls /home`；`bootfs` 里 `wpa_supplicant.conf` 自 Bookworm 起失效原为推断，现补上官方原文。**仍未裁决**：移除动作对应哪一次镜像发布，官方不按发布日期陈述，本机装的又是哪一张，维持 `[待验证]` 并把四条板上判据写进「仍需上板实测」。本轮**未新增任何实测**，无 `[待验证]` 升格；`rpi-ssh.md` 的同名示例未改（认领在 qoder-b），只在「与其他文档的分工」留了同步提示。
-- 2026-10-15（V1 手册核对，本窗口）：显示侧 4 条存疑与 nmcli DNS 分隔全部对官方文档核完，结论集中在「手册核对结论」与「仍需上板实测」两节。**四条里三条由手册裁决**：裸 `hdmi` 键不存在（`hdmi=0` 弃用，禁用 HDMI 改用 `hdmi_ignore_hotplug=1`——这同时纠正了上一条把 `hdmi=0` 简单判给 `hdmi_force_hotplug=1` 的择一，两个需求方向相反）；`enable_tvout` 在 3B 上默认即为 `1`，源文档「3B 要显式开启且与 HDMI 互斥」的机型判断是反的，3B 的复合视频参数是 `sdtv_mode` 一族；`gpu_mem` 默认 `76` 成立但依据是「内存 ≥1 GB」而不是机型。**第四条（3B 是否默认启用 KMS）官方文档没有按机型陈述默认值，仍无法裁决**，维持 `[待验证]`。nmcli `ipv4.dns` 多值分隔裁决为空格加引号（nmcli-examples(7) 官方示例），逗号写法已从命令中删除——逗号在官方属性表里只对 `ipv4.addresses` 有依据；「地址固定」小节的回读断言保留，因为这条仍是文档结论、不是板上结果。本轮**未新增任何实测**，`[待验证]` 一条未升格。
-- 2026-10-15（编排会话收尾）：补 `hdmi_drive=2`、`systemctl list-units --type=target --state=active` 两条来自 `rpi-display-headless.md` 的条目；新增「网页终端 ttyd（Pi 侧）」节（安装、`ttyd -p 7681 -W bash`、systemd 常驻），关掉 `rpi-ssh.md` 把安装推给本文却无处可查的裂缝；VNC 一节的客户端指向改为 RealVNC Viewer。**两个来源文件（`rpi-headless-access.md`、`rpi-display-headless.md`）内容归并完毕后删除。**本条未新增任何实测：源稿里 `vcgencmd get_gpu_mem` 与 `hdmi=0` 两条按键名正确性判给主干现写法（`get_mem gpu`、`hdmi_force_hotplug=1`），属文档内部择一，不是实测结论。
-
-- 2026-10-15（A1 合稿）：本文升为 Pi 侧主干，吸收 `rpi-display-headless.md` 全文与 `rpi-headless-access.md` 的 Pi 侧段落，新增「镜像与默认账户基线」「boot 分区配置文件」「显示输出与无头模式」「串口控制台」「与其他文档的分工」五节，排障顺序补第 0 步（先用串口分辨系统是否在跑）。电脑侧段落（PuTTY/scp/`~/.ssh/config`）按端分界移交 `rpi-ssh.md`，本文原有的同名快照小节已删——`rpi-ssh.md` 有带 `[事实]` 的等价内容。
-- 2026-10-15（A1）：两处已知分歧按约定**双方都保留并标 `[待验证]`**，未择一——`nmcli ipv4.dns` 多值分隔（逗号加引号 vs 空格），以及新镜像默认账户与 SSH 是否预置（`pi`/`raspberry` 首登 vs Imager 自设且默认无 SSH），并各配了「执行后回读」的判别方法。另把显示篇里 4 处我无把握的键名/默认值（`hdmi=0`、`enable_tvout=1`、3B 是否默认不启用 KMS、`gpu_mem` 默认 76）单列为存疑待核清单，核实前不得使用。
-- 2026-10-15：确定为 **PureVPN**（电脑侧），Pi 侧走协议而非客户端；已加「路线 C」小节。首要核实项是会员后台能否导出 `.ovpn`/`.conf`、以及 OpenVPN 专用密码是否需单独设置。
-- 2026-10-15：审阅修正 8 处——摘要与章节定位随主通道变更更新；接口节带宽归属改为「U 盘只拖慢有线、WiFi 不受影响」；`dhclient` 应为 `dhcpcd`；nmcli 多 DNS 改逗号加引号写法；`wpa_state` 判据按状态分段；原「TUN 会掐断 SSH」与「wg/openvpn 不会」两处矛盾结论合并为「风险来自 `strict_route`」；路线 B「能吃现有订阅」改为「需订阅链接，PureVPN 不提供」；WPA3 与 BCM2837 加密扩展两处凭记忆断言降级为 `[待验证]`。
-- 2026-10-15：新增「借电脑的网络出口」节，含路线 A（代理型客户端开 `allow-lan`）与路线 B（TUN）。当时未确认客户端类型；下一条已确认为 PureVPN 隧道型，路线 A 对本例失效，已就地标注。
-- 2026-10-15：**用户选定 WiFi 为主通道**（电脑与 Pi 同连一路由器，控制与上网都走 wlan0）。eth0 直连、ICS、link-local 兜底全部降级为救援路径，相应地「link-local 是否生效」不再是首要实测项。
+- 2026-10-19（查表化）：整篇重写为表为主——长段解释删除（复盘靠 `.ai/timeline.md` 与 git 记录回溯），判据、命令、参数、单位、失败表现、鉴别顺序全部压进表格；章名与章序未动；档位只随内容走、未升格；「SSH 服务端」旧句「本板属哪边仍未实测」按同日首轮基线改口；WiFi、显示、串口各节内多个 `###` 小节与说明段压成表行（小题名保留在行首标签，含原「使能与内核输出」小节）；ttyd 的 systemd unit 由代码块压成表行。
+- 2026-10-19（内核通道实测）：新增 `[对端实测]`——`<0>` 出／`<6>` 被挡／抬 7 后出三条对照，内核消息走串口是通的，挡住的是 `printk` console_loglevel（默认 3）；排障表加「能登录但看不到内核消息」行与 `dmesg -n 7`／`-n 3` 改法。
+- 2026-10-19（串口接通，同日第二轮）：`[对端实测]`——三根线接 pin 8/10/6、115200 8N1 Flow=None，COM9 发 CR 即回 `<主机名> login:`；mini-UART 漂移定性「机制在、空载未复现、负载下未测」，不照它改 config；`console=serial0` 条仅登录提示符半句升 `[对端实测]`；「完全无反应」改指 `rpi-ssh.md` 第八节枚举判据；登录提示符带主机名、外发按索引层第五节处理。
+- 2026-10-19（开始建物理串口）：新增 `[板上实测]`——本板控制台是 mini-UART（`ttyS0`→`3f215040.serial`）、core 400 MHz 且 ondemand、无 `core_freq`/`force_turbo` → 「满屏乱码」多了一个非接线根因；修法 `core_freq=250` 是否有效 `[待验证]`；`disable-bt` 条补「关蓝牙后 serial0 指向要重新读」。
+- 2026-10-19（回答「屏幕现在是不是不能用了」）：新增「①②④ 之后显示层的真实现状」——没关死、只是没人往屏上画；三条判据（vtcon 看字符、`disconnected`≠禁用、`CmaTotal` 未缩）；④ 对真接屏影响仍未实测；回退命令落档，未做任何配置改动。
+- 2026-10-19（关屏 ④ 执行，经 SSH 三轮重启 A/B）：新增「④ 的执行实录」——`gpu_mem=16` 得 +49 MB；推翻「④ 要先走 ③」；代价查实为 VCHI 起不来（`/dev/video*` 消失，判据 `ls /dev/video*`）；journald 非持久、跨 boot 对照须改前当场取；照出 `rpi-connect-wayvnc` 每 5 秒失败刷屏，未处理。
+- 2026-10-19（关屏 ①② 执行，经 SSH）：① used 244→194（50 MB 非旧记 249；残留三笔经 cgroup 判认为 SSH 自身 user session）；② 改写 `cmdline.txt`＋disable tty1、逐 token diff 核过、重启复验通过（新 cmdline 生效、串口 active、① 保住、boot 后 used 136、欠压仍在）；撤回上一版「文件里不是 serial0」的错判（alias 解析、非冲突）。
+- 2026-10-19（分目录）：本篇由 `docs/pi/` 根移入 `docs/pi/access/`，跨分类链接改 `../<分类>/`、索引层改 `../../README.md`；章号与散文式引用未动。
+- 2026-10-19（新增观测专章＋关屏实测）：`rpi-status.md` 成文并引用本篇串口判据；「显示输出与无头模式」新增关屏小节（249 MB 桌面栈、依赖链、四档方案当时均未执行）。
+- 2026-10-19（结构整理）：接入 `docs/README.md` 索引层——篇首改 `> 用途`／`> 边界`，证据分档与敏感规则上收，新增 `## 本篇结构`，「与其他文档的分工」更名 `## 相关文档`、「状态」更名 `## 变更记录`；章号章序未动。
+- 2026-10-19（同日续测，经 SSH）：纠正「`command -v iw` 空＝没装」误判——非交互 PATH 不含 `/usr/sbin`，五工具全在、真缺只有 `tcpdump`，命令统一加 `sudo`；`iw get power_save`→`on` 使候选 ③ 升为实测成立前提；nmcli 单位坑与链路质量读数记入；查清 netplan 与 NM 共管（`con mod` 是否写回未验）；属性名纠错（只有 `mac-address-randomization`）；记 `journalctl --since` 查未来窗口的取证教训。
+- 2026-10-19（首轮板上实测，接入轮）：本文启用 `[板上实测]` 档——基线四判据全套（trixie、`/home` 无 pi、sshd enabled、boot 无预置文件）；「仍需上板实测」三行升格（KMS 默认启用、`gpu_mem=76M` 默认推导、`enable_tvout=1`）；记入一次约 40 秒整体不可达（根因未定、判别顺序先换电源）；`/var/log/auth.log` 本板不可用；「权限→静默拒钥」未观察到、维持 `[待验证]`；敏感口径（账户名/主机名/口令/公钥正文/IP 不入库）一并确立。
+- 2026-10-15（编排会话跨稿同步）：V3 改判无线芯片名为命名层次差异、两边都对（产品页 BCM43438、驱动/固件 43430 一族），接口盘点双名并列给用名规则；BLE 裁掉（官方两处明写 3B 带 BLE）；raspberrypi.com 的 403/404 系抓取被拦、页面未下架。均手册层，无实测升格。
+- 2026-10-15（V5 手册核对）：默认账户与 SSH 分歧由官方文档裁完——当前镜像不预置 `pi`、默认禁用 SSH；`pi`/`raspberry` 流传系官方文档自身滞后（#2537 至 PR #3310 窗口）；无头启用需空 `ssh`＋`userconf.txt`；示例用户名全改 `<用户>`；「移除对应哪次发布」维持 `[待验证]` 并写入四条板上判据。未新增实测。
+- 2026-10-15（V1 手册核对）：显示侧四条存疑与 nmcli DNS 分隔对官方文档核完——`hdmi=0` 键不存在、`enable_tvout` 3B 默认即 1（源文档机型判断相反）、`gpu_mem` 默认依据内存容量、KMS 按机型默认值官方无陈述维持 `[待验证]`；`ipv4.dns` 裁决空格加引号、逗号已从命令删除。未新增实测。
+- 2026-10-15（编排会话收尾）：补 `hdmi_drive=2` 与 `systemctl list-units --type=target` 两条；新增 ttyd 节（安装、`ttyd -p 7681 -W bash`、systemd 常驻）；VNC 客户端指向改 RealVNC Viewer；两个来源文件归并后删除。未新增实测。
+- 2026-10-15（A1 合稿）：本文升为 Pi 侧主干，吸收 `rpi-display-headless.md` 全文与 `rpi-headless-access.md` 的 Pi 侧段落，新增基线/boot/显示无头/串口/分工五节、排障补第 0 步；电脑侧段落移交 `rpi-ssh.md`。
+- 2026-10-15（A1）：nmcli DNS 分隔与默认账户两处分歧按约定双方保留并标 `[待验证]`、各配回读方法；显示侧 4 处键名/默认值单列存疑待核、核实前不得使用。
+- 2026-10-15：出网定为 **PureVPN**（电脑侧），Pi 走协议而非客户端、新增路线 C；首要核实项为后台能否导出 `.ovpn`/`.conf` 与 OpenVPN 专用密码是否单独设置。
+- 2026-10-15：审阅修正 8 处——接口节带宽归属改「U 盘只拖慢有线」；`dhclient` 应为 `dhcpcd`；`wpa_state` 判据分段；TUN 掐 SSH 与 wg 不掐合并为「风险来自 `strict_route`」；路线 B 需通用订阅链接；WPA3 与 BCM2837 加密扩展降级 `[待验证]`。
+- 2026-10-15：新增「借电脑的网络出口」节（路线 A 代理型、路线 B TUN）；同日确认 PureVPN 为隧道型、路线 A 对本例失效并就地标注。
+- 2026-10-15：**用户选定 WiFi 为主通道**（电脑与 Pi 同连一路由器，控制与上网都走 wlan0）；eth0 直连、ICS、link-local 降为救援，「link-local 是否生效」不再是首要实测项。
 - 2026-10-15：新增「上行链路选项」节，区分控制链路与上网链路两个维度。
-- 2026-10-15 纠错：初版把 wlan0 写成与 eth0 共用 USB 2.0 总线，实际 3B 无线走 SDIO、只有 smsc95xx 以太网在 USB 上。涉及总线归属的推断已全部复核。
-- 2026-10-15：成文，**全部未实机验证**。未知项清单：SD 卡镜像代际与默认账户/SSH 基线（决定「连进去」的一切前提）、无头预置与静态写法随代际分叉、显示侧 4 个键名/默认值、PureVPN 后台能否导出配置文件与专用密码机制。
-- 下一步顺序：跑「镜像与默认账户基线」的四条判据确认本板落在哪一边（该节已由官方文档裁决，板上只需确认、不再择一）→ 落实「仍需上板实测」表里的图形驱动路径一条（决定 `hdmi_*` 旧键在这台 3B 上生效与否）→ 配 WiFi 主通道那四项（国家码、随机 MAC、省电、蓝牙共天线）→ 用「排障顺序」0–5 逐条跑通 → 后台拿 VPN 配置（`.conf` 优先，其次 `.ovpn`）→ 装 wireguard-tools 或 openvpn 并连上 → 验证三连。link-local、静态直连与路线 A/B（借电脑代理、自跑 TUN 内核）留作备选，不排在关键路径上。
-  `[板上实测]` 2026-10-19 更新：**前四步已跑完**（基线四条判据全套、KMS 与 `gpu_mem` 已核、SSH 免密接入可用），WiFi 四项里国家码与信号类候选已排除，省电实测为 `on` 但**未改动**，随机 MAC 一项未验；**剩余真正未做的只有 VPN 那三步**。另多出一条排在它们前面的硬件待办：欠压复测，见 `rpi-3b-hardware.md` §4.1。
-- 本文归属：2026-10-19 起本仓由单一工作窗口推进，多窗口并行约定已退役；现状与未完成事项写 `.ai/current.md`，决策与历史结论写 `.ai/timeline.md`。
+- 2026-10-15 纠错：初版误写 wlan0 与 eth0 共用 USB 2.0——3B 无线走 SDIO、只有 smsc95xx 以太网在 USB 上；涉总线归属的推断全部复核。
+- 2026-10-15：成文，全部未实机验证；未知项清单：镜像代际与账户/SSH 基线、无头预置随代际分叉、显示侧 4 个键名/默认值、PureVPN 后台机制。下一步顺序：基线四判据 → 图形驱动路径 → WiFi 四项（国家码、随机 MAC、省电、蓝牙共天线）→ 排障 0–5 → VPN 配置与三连；link-local/静态直连/路线 A/B 留备选。`[板上实测]` 2026-10-19 更新：**前四步已跑完**（基线全套、KMS 与 `gpu_mem` 已核、SSH 免密可用），WiFi 项中国家码与信号类已排除、省电实测 `on` 未改动、随机 MAC 未验；**剩余真正未做的只有 VPN 三步**，另多出一条排在它们前面的硬件待办：欠压复测（`rpi-3b-hardware.md` §4.1）。
+- 2026-10-19（本文归属）：本仓由单一工作窗口推进，多窗口并行约定已退役；现状与未完成事项写 `.ai/current.md`，决策与历史结论写 `.ai/timeline.md`。
