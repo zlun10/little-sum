@@ -1,5 +1,14 @@
 # 任务时间线
 
+## 2026-10-19（② 重启复验）— 远程重启前必须先分清「发不出去」和「发了没生效」
+
+- 决策（用户「发重启命令并盯着上线」）：由本窗口 `ssh pi sudo reboot` 并轮询上线，不再等用户手动重启。
+- **一次真实的误判**：第一次发重启时 `ssh` 超时，我接着 `ping` 板子也不回，就报「通讯断了」。为分辨是链路还是机器，我按「网关总是 `x.y.z.1`」的习惯去 ping `<本机所在段>.1`——**那个地址根本不存在**（本网络是 `/23`，网关在**相邻段的 `.1`**，与本机地址不同段末位；具体地址按敏感口径不入库），它「不通」不构成任何证据。改 ping 真网关 → **TTL=64 可达**，再 ping 板子也回了。→ **误判的根因是拿臆测的地址做对照，不是链路本身有多复杂。**
+- **可复用判据（顺序）**：① 分辨「发不出去」还是「发了没生效」只有一条命令算数——重启前后各读一次 `ssh pi 'uptime -s'`，`ssh` 返回 0 不算送达（`sudo reboot` 会先把连接拆掉）；② 判「整网失联」要先 `route print` 确认真网关和掩码，不许按 `x.y.z.1` 的习惯猜；③ 单点不可达先用同段/同刻的另一台设备（这里是路由器）做对照。
+- 复验结果（boot 14:20:55，约 40 秒上线）：`/proc/cmdline` **无 `console=tty1`/`quiet`/`splash`/`plymouth.ignore-serial-consoles`**，`getty@tty1` = `disabled`+`inactive`，`serial-getty@ttyS0` = `enabled-runtime`+`active`，`get-default` 仍 `multi-user.target`（**① 的持久性就此补验通过**），`free -m` used **136**。
+- **一条新的读数判据**：used 从 ① 之后的 194 掉到 136，**不是 ② 省的**（② 不动内存），差值是这次连接还没拉起 user session（portal/wireplumber/rpi-connectd 那一类）。→ **`free` 要按「本次会话登录多久」对照，跨会话比数必然得出假的「又省了」。** 另 `get_throttled` 重启后仍 `0x50000`：重启不解决欠压，「非 `0x0` 不接 GPIO 外设」的硬规则继续生效。
+- 现状：关屏停在 **②**，③（注释 `vc4-kms-v3d`）与 ④（降 `gpu_mem`）仍未执行、等用户定点。
+
 ## 2026-10-19（关屏 ② 落配置）— 我上一版那条「纠正」本身是错的：文件写 serial0、`/proc` 显示 ttyS0
 
 - 决策（用户「2、做，需要我重启？」）：执行 ② 的**配置改动**（`disable getty@tty1` ＋ 改写 `cmdline.txt` 删 `console=tty1`/`quiet splash`/`plymouth.ignore-serial-consoles`），**不替他重启**——`cmdline.txt` 只在 boot 阶段由固件读一次，必须重启才生效，而这块板欠压未修、每次重启都有成本，时机归他。
