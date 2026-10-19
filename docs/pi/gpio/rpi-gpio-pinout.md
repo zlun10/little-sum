@@ -85,6 +85,12 @@ BCM2837 的所有数据引脚**绝对最大额定电压只有 3.3V**。把 5V �
 
 > **这张表的依据等级要说清楚**：官方 GPIO 文档给的是 **BCM 编号与功能**（硬件 PWM、SPI0/SPI1、I2C、串口用的 GPIO 号都写明），但**物理针号对照表在官方文档里是一张图片，没有文字版**。所以本表的针号来自 Pinout.xyz / Pi4J 等多源交叉印证，再用官方功能表反向校验自洽性。逐条结论见本节末「核对结论与出处」。
 
+那张官方图片**已落盘为本仓文件** `rpi-gpio-pinout-official.png`（与本篇同目录，出处与校验值见「参考」），离线也能逐脚对照：
+
+![树莓派 40 针 GPIO 官方引脚图（落盘副本）](./rpi-gpio-pinout-official.png)
+
+⚠️ **2026-10-19 拿这张图与本表逐脚对过：全部一致**，含三处易错点——**针 4 = 5V**（不是 GPIO0，GPIO0 在针 27）、**针 19 = GPIO10 = SPI0 MOSI**、**针 21 = GPIO9 = SPI0 MISO**。方位也别照图记：图上排针在板子右侧、针 1 在最上端，认针 1 仍以**方形焊盘**为准（见本节末）。
+
 | Pin | BCM | 功能 | Pin | BCM | 功能 |
 |---|---|---|---|---|---|
 | 1 | — | 3.3V | 2 | — | 5V |
@@ -155,6 +161,8 @@ GPIO11 (23) (24) GPIO8    GND (25) (26) GPIO7
 GPIO19 (35) (36) GPIO16   GPIO26 (37) (38) GPIO20
    GND (39) (40) GPIO21
 ```
+
+**第 14 项：官方图片版引脚表与本表的逐脚比对（2026-10-19）**。官方那张图已落盘为 `rpi-gpio-pinout-official.png`（出处与校验值见「参考」），与本表**逐脚一致、无分歧**，三处易错点由它独立佐证：**针 4 = 5V**（第 13 项 `pinout` 同证；GPIO0 在针 27，别把 5V 当数据脚接）、针 19 = GPIO10 = SPI0 MOSI、针 21 = GPIO9 = SPI0 MISO。⚠️ 这条属**手册层比对**，不是万用表导通，第 12 项那条电气判据仍未开戒。
 
 **为什么网上会有一版把 19/21 对调**：一种流传的说法是早期 26 针排针的某个改版（俗称 P1-6，2012 年前的 Pi 1 板）把 SPI0 的 MOSI/MISO 放在与后来相反的位置，旧教程因此沿用了对调的针号。⚠️ 这条说法**本仓未核到官方明文**（官方 `gpio-on-raspberry-pi.adoc` 里没有 19/21 对调的任何注记），只作背景解释，别当依据引用——**本板取用的正确方向由上面 `pinout` 实测给：针 19 = GPIO10 = SPI0 MOSI，针 21 = GPIO9 = SPI0 MISO**。接 SPI 外设前若还要第二重确认，跑 `gpioinfo -c gpiochip0` 看 line 9/10 的功能名，或先拿一根线点 LED 验通断，别照抄任何一张图。
 
@@ -689,6 +697,7 @@ cat /sys/class/gpio/gpiochip512/{label,base,ngpio}  → pinctrl-bcm2835 / 512 / 
 ## 参考
 
 - GPIO 官方文档:raspberrypi.com/documentation/computers/raspberry-pi.html#gpio
+- **官方 40 针引脚图（已落盘）**：本仓 `rpi-gpio-pinout-official.png`，206936 字节，`sha256=646c2db09e9eb5894440b22c9fe1b9623dfd4ecefcf3aaae7f554e5fd8c1c934`；取自官方仓库 `raspberrypi/documentation` 的 `master` 分支 `documentation/asciidoc/computers/raspberry-pi/images/GPIO-Pinout-Diagram-2.png`（2026-10-19 经 `raw.githubusercontent.com` 取，`200 OK / image/png`；发布页对本机 403）。版权属 Raspberry Pi (Trading) Ltd，本仓只作参考副本。
 - GPIO 官方源文件（发布页对本机 403 时的同源替代，仓库 `raspberrypi/documentation` 的 `master` 分支）：
   - `documentation/asciidoc/computers/raspberry-pi/gpio-on-raspberry-pi.adoc` —— 编号说明、`pinout`、备用功能表（硬件 PWM / SPI / I2C / 串口）、BCM2835/2836/2837 电压规格
   - `documentation/asciidoc/computers/raspberry-pi/gpio-pad-controls.adoc` —— 驱动强度档位、16mA 安全值、3.3V 供电每脚约 3mA 的警告
@@ -697,6 +706,7 @@ cat /sys/class/gpio/gpiochip512/{label,base,ngpio}  → pinctrl-bcm2835 / 512 / 
 
 ## 变更记录
 
+- 2026-10-19（官方引脚图落盘）：第三节表前嵌入 `rpi-gpio-pinout-official.png` 并加「核对结论与出处」第 14 项（官方图与本表逐脚一致，佐证针 4=5V、19/21 方向）；「参考」记来源分支、字节数与 sha256。
 - 2026-10-19（分目录）：本篇由 `docs/pi/` 根移入 **`docs/pi/gpio/`**，跨分类的相对链接改为 `../<分类>/`，指向索引层改为 `../../README.md`；**章号与散文式引用（「`rpi-xxx.md` 第 N 节」）一条未动**——散文只认文件名，而文件名在全仓唯一。分类依据与机检见 `docs/README.md` 第一节。
 
 - 2026-10-19（新增观测专章）：`docs/pi/hardware/rpi-status.md` 成文，其第七节引用本篇第九节的 libgpiod 2.2.1 `-c` 形态与 chip 分布；「相关文档」补一条指向那篇。

@@ -5,7 +5,8 @@
 #     2 .ai/ 只留 current.md 与 timeline.md，且不存在游离的 .ai/current-*.md
 #     3 派单信箱已废：.ai/dispatch/ 若重新出现即违规
 #     3.5 分类目录：docs/pi/ 根下不得直接放 .md（必须进 hardware/gpio/access/qa）、
-#         分类目录不得为空、docs/ 下除 README.md 与 pi/ 之外不放东西
+#         分类目录不得为空、docs/ 下除 README.md 与 pi/ 之外不放东西、
+#         docs/pi/ 根下只允许目录（图片等非文档资产也归分类目录内）
 #   结构（docs/pi/<分类>/ 下每篇）
 #     4 代码围栏 ``` 成对（后续断言靠它切正文）
 #     5 正文级标题（H1）恰好一个
@@ -14,7 +15,8 @@
 #     8 尾块名目与顺序：相关文档 → 参考 → 未覆盖事项 → 变更记录（最后者必须存在且固定最末）；
 #       旧名目（修订记录 / 状态 / 与其他文档的分工）不得再出现
 #     9 markdown 相对链接的目标文件存在——只取正文（跳过代码围栏与行内代码），
-#       散文里用行内代码写出的 `](./x.md)` 形态属示例，不算引用；已删除的历史源稿不写成链接
+#       散文里用行内代码写出的 `](./x.md)` 形态属示例，不算引用；已删除的历史源稿不写成链接；
+#       图片等资产链接（.png/.jpg/.svg/.gif）同规则校验目标存在
 #    10 索引层 docs/README.md 存在，且每篇都在里面被命名（名单由文件系统推导，加新篇不改脚本）
 #  形态（查表优先，docs/README.md 第六节第 8、9 条）
 #    11 主干与专章：单篇 ≤ 220 行，且 `|` 开头的表行占全篇 ≥ 35%（pi/qa/ 不套此条）
@@ -61,6 +63,11 @@ done
 # docs/pi/ 下必须再分类：直接放一篇 .md 即违规（层次由目录表达，见 docs/README.md 第一节）
 for f in docs/pi/*.md; do
   [ -e "$f" ] && report FAIL "文档未归类：$f 应放进 docs/pi/<分类>/ 子目录"
+done
+# 非文档资产（官方图片等）也只能落在分类目录内：docs/pi/ 根下只允许目录
+for f in docs/pi/*; do
+  [ -e "$f" ] || continue
+  [ -d "$f" ] || report FAIL "docs/pi/ 根下不放文件（含图片资产）: $f —— 资产与引用它的篇同级，放 docs/pi/<分类>/ 内"
 done
 # 分类目录不得为空（移走文件后留下的空壳）
 for d in docs/pi/*/; do
@@ -159,7 +166,7 @@ EOF_TOC
 
   # markdown 相对链接目标存在
   d=$(dirname "$f")
-  links=$(prose "$f" | grep -o '](\.[^)]*\.md)' | sed 's/^](//; s/)$//')
+  links=$(prose "$f" | grep -o '](\.[^)]*\.\(md\|png\|jpg\|jpeg\|svg\|gif\))' | sed 's/^](//; s/)$//')
   while IFS= read -r l; do
     [ -n "$l" ] || continue
     [ -f "$d/$l" ] || report FAIL "$base：链接目标不存在 $l"
