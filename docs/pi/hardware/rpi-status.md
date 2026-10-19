@@ -110,7 +110,7 @@
 | 问什么 | 命令 | 本板读数 | 判读 |
 | --- | --- | --- | --- |
 | 谁占了哪条线 | `gpioinfo -c gpiochip0` | chip 0/1/2，另有 `/dev/gpiochip4` 链接 | libgpiod 2.2.1 **必须带 `-c`**；判据见 [`rpi-gpio-robust.md`](../gpio/rpi-gpio-robust.md) 第八节 |
-| 桌面开没开 | `ls /dev/dri` + `systemctl get-default` + `systemctl is-active lightdm` | `card0`/`renderD128`、`graphical.target`、`active` | 三条合起来才算「桌面开着」；单看 `/dev/dri` 只说明 KMS 驱动在 |
+| 桌面开没开 | `ls /dev/dri` + `systemctl get-default` + `systemctl is-active lightdm` | `card0`/`renderD128`、`multi-user.target`、`inactive`（2026-10-19 ① 之后；此前为 `graphical.target`/`active`） | 三条合起来才算「桌面开着」；单看 `/dev/dri` 只说明 KMS 驱动在——**本板现在正是这种半开状态** |
 | 串口控制台可用吗 | `ls -l /dev/serial0`；`systemctl is-active serial-getty@ttyS0.service`；`is-enabled` | `serial0 -> ttyS0`、`active`、`enabled-runtime` | **关屏之前必须先确认这条**，否则关掉唯一控制台就没有控制台 |
 
 ## 八、本板基线速查（带病基线）
@@ -121,15 +121,15 @@
 | --- | --- | --- |
 | `get_throttled` | `0x50000`（重启后 46 秒即重新锁存） | **异常，待换电源复测** |
 | `measure_temp` | `44.0'C`（空载） | 正常 |
-| `free -m` | used 233 / available 687 / total 921 | 正常（约 249 MB 是桌面栈） |
+| `free -m` | used **190** / available 730 / total 921（① 之后隔了一段时间再读，2026-10-19） | 正常；① 执行当场是 used 244 → 194，桌面栈满开时量到 249 |
 | swap | zram0 921M，used 0B | 正常 |
 | `df -h /` 与 `df -i /` | 19% / 8% | 正常 |
 | `is-system-running` / `--failed` | `running` / 空 | 正常 |
 | `journalctl -p err -b` | 持续刷 `bgscan … signal strength monitoring` | **未定性** |
 | WiFi | 已关联，`-48 dBm`，信道 6，省电 `on` | 可用；曾一次约 40 秒不可达，根因未定 |
 | 时钟 | 已同步，NTP active | 正常 |
-| 默认控制台 | `console=serial0,115200 console=tty1`，串口 getty active | 可用 |
-| 图形 | KMS 开、`graphical.target`、lightdm active | 待用户决定是否关 |
+| 默认控制台 | 文件里 `console=serial0,115200`（`/proc` 显示为 `ttyS0`，别名被内核解析），串口 getty active | 可用；② 已从文件删 `console=tty1`，**未重启故运行时仍是旧串** |
+| 图形 | `multi-user.target`、lightdm `inactive`（① 已于 2026-10-19 执行）；`vc4-kms-v3d` **未注释**，KMS 驱动层仍在 | 桌面栈已停；驱动层属 ③，未动 |
 
 ## 九、假读数清单
 
@@ -144,6 +144,8 @@
 | `journalctl --since <时刻>` 无记录 = 那时没事 | 先确认该时刻在本次 boot 之内 |
 | `nmcli SIGNAL=75` = 75 dBm | 是 0–100 质量刻度 |
 | `ls /dev/dri` 有 `card0` = 桌面在跑 | 要加 `get-default` 与 `is-active lightdm` |
+| `/proc/cmdline` 里的串 = `cmdline.txt` 文件里的串 | 运行时视图会被归一化（本板文件写 `console=serial0,115200`，`/proc` 显示 `ttyS0`）；比配置要成对读两边 |
+| `ps` 里有 portal/wireplumber = 桌面没关干净 | 先 `cut -d: -f3 /proc/<pid>/cgroup`，挂在 `user@1000.service` 的是这次 SSH 登录自己的 user session |
 | `/var/log/auth.log` 读不到 = 没记日志 | 本板认证日志在 journald |
 
 ## 相关文档
