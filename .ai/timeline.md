@@ -4,8 +4,9 @@
 
 - 决策（用户「2、做，需要我重启？」）：执行 ② 的**配置改动**（`disable getty@tty1` ＋ 改写 `cmdline.txt` 删 `console=tty1`/`quiet splash`/`plymouth.ignore-serial-consoles`），**不替他重启**——`cmdline.txt` 只在 boot 阶段由固件读一次，必须重启才生效，而这块板欠压未修、每次重启都有成本，时机归他。
 - 实测：备份 176 字节 → 新文件 118 字节、`wc -l` 仍 0（**一整行、行尾无换行**，与原文件同形）；`diff <(tr ' ' '\n' < 旧) <(tr ' ' '\n' < 新)` 显示**只少这 3 个 token**，`root=PARTUUID=…`/`rootfstype`/`fsck.repair`/`rootwait`/`cfg80211…regdom=CN` 全部原样。`disable` 只 `Removed '…/getty.target.wants/getty@tty1.service'`，当前那个 getty 实例仍在跑。SSH 与 `serial-getty@ttyS0` 全程 `active`。
-- **根因（我为什么写错）**：上一轮我读的是 `/proc/cmdline`（`console=ttyS0,115200`），就断言「文件里不是 `serial0`，别照抄」——**把运行时视图当成了源文件**。本轮 `cat` 文件，原文确实是 `console=serial0,115200`：`serial0` 是 `config.txt` 侧的别名，boot 时被翻译成实际端口。→ **教训：比内核命令行必须成对读「文件值」与 `/proc` 值，只读一边必然产出一条假冲突，而且它会以「实测纠正」的名义盖掉原本正确的正文。** 这条已写进 `rpi-network.md` 的 ② 节与 QA。
+- **根因（我为什么写错）**：上一轮我读的是 `/proc/cmdline`（`console=ttyS0,115200`），就断言「文件里不是 `serial0`，别照抄」——**把运行时视图当成了源文件**。本轮 `cat` 文件，原文确实是 `console=serial0,115200`：`serial0` 是固件写进设备树的 alias（本板 `tr -d '\0' < /proc/device-tree/aliases/serial0` → `/soc/serial@7e215040`，`serial1` → `/soc/serial@7e201000`），内核按 alias 解析成 `ttyS0`。→ **教训：比内核命令行必须成对读「文件值」与 `/proc` 值，只读一边必然产出一条假冲突，而且它会以「实测纠正」的名义盖掉原本正确的正文。** 这条已写进 `rpi-network.md` 的 ② 节与 QA，并落成用户级记忆 `feedback-source-vs-runtime-view`（适用于 config.txt／unit 文件／环境变量一类「改了生效吗」的判断）。
 - 附带（仍成立的旧结论）：② 省不了内存，买的是「所有输出只从串口走、tty1 没有登录口」这条确定性；正因为它把救援通道先钉死，② 必须排在 ③（注释 `vc4-kms-v3d`）前面做。
+- 未做（明确留着的）：③ 未动；**② 的实际效果与 ① 的重启持久性都还没复验**——四条复验命令写在 `rpi-network.md`「② 的执行实录」末尾，重启后一次性跑完即可判定。
 
 ## 2026-10-19（关屏 ① 执行）— 省到的是 50 MB 不是 249 MB：满桌面的数被当成了关屏收益
 
