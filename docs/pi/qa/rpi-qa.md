@@ -170,6 +170,9 @@ A：实测不影响——`gpu_mem=16` 时 `/proc/asound/cards` 仍是 `vc4hdmi` 
 **Q：欠压会让 GPIO 一起出问题吗？**
 A：会混淆判断，所以硬规则是 `get_throttled` 非 `0x0` 就不接 GPIO 外设、不跑写 SD 的负载。详见 `rpi-status.md` 第三节。
 
+**Q：WiFi 整体不可达、SSH 进不去，除了等它自己回来还有别的办法吗？**
+A：有，本板 2026-10-19 实测整条：串口自动登录进去后 `nmcli connection up "netplan-wlan0-<SSID>"`，8 秒恢复、地址不变。这次**68 分钟不自愈**的原因不是信号也不是欠压，是 NM 走了 `need-auth → failed (reason 'no-secrets')`——日志原文 `No agents were available for this request`，之后停在 `disconnected` 零重试；切到无头桌面会话没了，就没有能应答口令请求的 secret agent，而 keyfile 里 `psk-flags: 0` 也没能让它自答。取证命令与 `journalctl -g` 的两个假读数坑见 [`rpi-network.md`](../access/rpi-network.md)「WiFi 通道」根因行。
+
 ## 六、文档与协作
 
 **Q：为什么文档这么短、不留解释？**
@@ -199,6 +202,8 @@ A：本仓长期裁定，推送逐次授权；协作约定而非板子事实，�
 3. **未做「问答是否需要独立目录」的再评估**：现按主题轴正交处理，若日后问答密度超过主干篇，可能反过来侵蚀主干的归属。
 
 ## 变更记录
+
+- 2026-10-19（不可达根因裁定）：第五节新增「WiFi 整体不可达、除了等自愈还有别的办法吗」一问——`nmcli connection up` 当场恢复，`no-secrets` 停摆是时长来源；细节本体归 [`rpi-network.md`](../access/rpi-network.md)。
 
 - 2026-10-19（内核通道实测）：第二节新增「串口能登录为什么看不到内核消息」——根因是 `printk` 的 console_loglevel 默认 3 挡住 info/warning，不是接线；三条 `<0>`/`<6>@3`/`<6>@7` 对照已落 `rpi-network.md`。
 - 2026-10-19（串口接通）：第二节新增三条——「没出现新 COM 口」**不是驱动问题**的枚举判据（清单与错误清单都不变＝物理层）、「一步验通不通」（发一个回车看 `<主机名> login:`，参数 115200 8N1 Flow=None）、「串口通了之后能不能关 SSH 密码登录」（前置已成立，剩顺序与线别拔）。同节原有两条改写：本机口数换成四个/三片 CH343、**COM9 是接到板上那片**；mini-UART 漂移补「**空载实测未复现，别照它改 `config.txt`**」。⚠️ 记一条敏感口径：登录提示符回显**带主机名**，外发前必须占位。
