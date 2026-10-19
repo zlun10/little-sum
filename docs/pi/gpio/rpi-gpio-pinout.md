@@ -1,13 +1,31 @@
 # 树莓派 3B — GPIO 主干（引脚、电气与控制路径）
 
-本文是 GPIO 类的唯一主干：40 针排针的构成、电气限制、完整引脚表、树莓派 3B 特有的坑，以及控制它的所有路径（Python 分层、命令行、C）。原 `rpi-gpio-control.md` 已整体并入第七节起的内容，文件名不再保留。
-
-适用机型：Raspberry Pi 3 Model B（BCM2837，40 针排针 J8）
-
-> 引脚表的**针号**来自多源交叉印证——官方 GPIO 文档只给 BCM 编号与功能，针号对照表在官方是一张图片；依据等级与逐条出处见第三节末「核对结论与出处」。
+> 用途：GPIO 类的**唯一主干**——40 针排针的构成、电气限制、完整引脚表、树莓派 3B 特有的坑，以及控制它的所有路径（Python 分层、命令行、C）。适用机型：Raspberry Pi 3 Model B（BCM2837，40 针排针 J8）。
+> 边界：什么时候会「看起来对、实际错」以及只读复核手段归 [`rpi-gpio-robust.md`](./rpi-gpio-robust.md)；`config.txt` 里的串口使能等板上配置归 [`rpi-network.md`](../access/rpi-network.md)；电脑侧操作归 [`rpi-ssh.md`](../access/rpi-ssh.md)；SoC 规格与功耗归 [`rpi-3b-hardware.md`](../hardware/rpi-3b-hardware.md)。证据分档、升格规则与敏感内容规则见 [`docs/README.md`](../../README.md)，本文不重复定义。
+> 沿革：原 `rpi-gpio-control.md` 已整体并入第七节起的内容，文件名不再保留。
+>
+> 引脚表的**针号**原靠多源交叉印证（官方 GPIO 文档只给 BCM 编号与功能，针号对照表在官方是一张图片）；**2026-10-19 已用本板 `pinout` 逐脚复核，除针 19/21 一处本篇原本写反、现已改正外全表对上**。依据等级与逐条出处见第三节末「核对结论与出处」。
 > **网上关于 pin 1 朝向的描述互相矛盾**，请一律以"方形焊盘"为准，见第三节。
-> 全文除第九、第十、第十二节标注 `[板上实测]` 的条目外，**没有任何一条实机验证**：引脚与电气结论来自公开手册交叉核对，代码片段属通用行为。接板子前必须先过第二节与第十一节。
-> `[板上实测]` 2026-10-19 首轮在这块 3B（Raspbian 13 trixie、内核 `6.12.47+rpt-rpi-v7`，经 SSH 只读探针，未接任何负载）上跑过，改写了三处：**libgpiod 是 2.2.1，本篇原来的命令行形态跑不通**（第九节）、**这块板的 chip 编号分布与常见写法不同**（第九、十节）、**sysfs 那条老办法要用全局编号**（第十节）。凡 `[板上实测]` 都带命令与实际输出。
+> 全文除第三、第九、第十、第十二节标注 `[板上实测]` 的条目外，**没有任何一条实机验证**：引脚与电气结论来自公开手册交叉核对，代码片段属通用行为。接板子前必须先过第二节与第十一节。
+> `[板上实测]` 2026-10-19 首轮在这块 3B（Raspbian 13 trixie、内核 `6.12.47+rpt-rpi-v7`，经 SSH 只读探针，未接任何负载）上跑过，改写了四处：**libgpiod 是 2.2.1，本篇原来的命令行形态跑不通**（第九节）、**这块板的 chip 编号分布与常见写法不同**（第九、十节）、**sysfs 那条老办法要用全局编号**（第十节）、**针 19/21 的 SPI0 方向本篇原先写反了**（第三节，`pinout` 实测）。凡 `[板上实测]` 都带命令与实际输出。
+
+## 本篇结构
+
+- 一、GPIO 是什么
+- 二、电气规格（先看这节，再接线）
+- 三、完整引脚表
+- 四、三套编号并存
+- 五、内置总线接口
+- 六、Pi 3B 专属坑：mini-UART
+- 七、控制路径怎么选（先分层，不二选一）
+- 八、Python 控制
+- 九、命令行控制（不写代码时最快）
+- 十、用 C 控制树莓派 GPIO
+- 十一、接线守则速查
+- 十二、常见坑清单
+- 相关文档
+- 参考
+- 变更记录
 
 ---
 
@@ -102,26 +120,43 @@ BCM2837 的所有数据引脚**绝对最大额定电压只有 3.3V**。把 5V �
 
 ⚠️ 别用板上的安装孔来找地，Pi 3 的安装孔到地平面不是可靠低阻通路，会误判。
 
-### 核对结论与出处（2026-10-15）
+### 核对结论与出处（2026-10-15 建，2026-10-19 板上补核）
 
-派单要求核三组，逐条结论如下。**全部是文档核对，不是板上实测**——板子不在场，标「待上板复核」的仍需上板确认。
+派单要求核三组，逐条结论如下。2026-10-15 那一轮**全是文档核对**；2026-10-19 在本板跑了 `pinout`，把针号一级的多数项升为 `[板上实测]`（第 13 项贴原始输出）——但它是**软件对照表**，不是万用表，所以第 12 项那条电气判据仍未开戒。
 
-依据分两级：**官方 GPIO 文档有明文** / **官方无文字表，靠多源交叉印证 + 算术自洽校验**。
+依据分三级：**板上实测** / **官方 GPIO 文档有明文** / **官方无文字表，靠多源交叉印证 + 算术自洽校验**。
 
 | # | 待核项 | 结论 | 依据等级 |
 | --- | --- | --- | --- |
-| 1 | pin 16 是否 GPIO23 | ✅ 是 GPIO23（原硬件篇写成 3V3，错） | 交叉印证 |
-| 2 | pin 18 是否 GPIO24 | ✅ 是 GPIO24（原写 GPIO10/SPI0 MOSI，错） | 交叉印证；且官方 `SPI0: MOSI (GPIO10)` 落在 pin 21，与本表自洽 |
-| 3 | SPI0 MOSI 是否在 pin 21 | ✅ 是，GPIO10 = pin 21 | **官方明文** |
-| 4 | pin 38 是否 GPIO20 | ✅ 是 GPIO20（原写 GND，错） | 交叉印证；官方 `SPI1: MOSI (GPIO20)` 佐证 |
-| 5 | GPIO 引出 28 个 | ✅ 成立 | 算术：40 − 4 电源 − 8 GND = 28；且这 28 个正好是 GPIO0–27 连续、无缺无重 |
-| 6 | ID_SD/ID_SC 保留，可用 26 | ✅ 成立 | **官方明文**：「GPIO pins 0 and 1 are present on the board (physical pins 27 and 28), but are reserved for advanced use」 |
-| 7 | GND 恰好 8 个 | ✅ 成立，针号为 6/9/14/20/25/30/34/39 | 算术 + 交叉印证。官方只说「a number of ground pins」，未给数量 |
+| 1 | pin 16 是否 GPIO23 | ✅ 是 GPIO23（原硬件篇写成 3V3，错） | 交叉印证 → 板上 `pinout` 已确认 |
+| 2 | pin 18 是否 GPIO24 | ✅ 是 GPIO24（原写 GPIO10/SPI0 MOSI，错） | 交叉印证 → 板上 `pinout` 已确认 |
+| 3 | SPI0 MOSI 是否在 pin 21 | ❌ **否，本表原先写反了**：GPIO10 = **pin 19** = SPI0 MOSI，GPIO9 = pin 21 = SPI0 MISO。官方明文「SPI0: MOSI (GPIO10)」一直是对的，错在把 GPIO10 排到 pin 21；第三节表与第五节 SPI0 行已按实测对调 | **板上 `pinout` 实测**（2026-10-19）＋官方明文 |
+| 4 | pin 38 是否 GPIO20 | ✅ 是 GPIO20（原写 GND，错） | 交叉印证 → 板上 `pinout` 已确认 |
+| 5 | GPIO 引出 28 个 | ✅ 成立 | 算术：40 − 4 电源 − 8 GND = 28；且这 28 个正好是 GPIO0–27 连续、无缺无重。板上 `pinout` 逐脚对得上 |
+| 6 | ID_SD/ID_SC 保留，可用 26 | ✅ 成立 | **官方明文**：「GPIO pins 0 and 1 are present on the board (physical pins 27 and 28), but are reserved for advanced use」。⚠️ `pinout` **不标这两个脚的保留身份**（它按编号列出 GPIO0/GPIO1），别拿它当保留脚的判据 |
+| 7 | GND 恰好 8 个 | ✅ 成立，针号为 6/9/14/20/25/30/34/39 | 板上 `pinout` 数出 8 个 GND，针号逐一对上；算术同前。**注意这是表，不是导通实测**，第 12 项的万用表判据仍待做 |
 | 8 | 硬件 PWM 只有 GPIO12/13/18/19 | ✅ 成立 | **官方明文**：「Hardware PWM available on GPIO12, GPIO13, GPIO18, GPIO19」 |
 | 9 | GPIO25、GPIO5 的「PWM」标注是否误写 | **不成立——本篇从未这样标注**：第三节表里 pin 22 = GPIO25、pin 29 = GPIO5 都是纯 GPIO，官方 PWM 集合里也没有这两个号 | 官方明文 |
 | 10 | 第五节 PWM 行与第三节表是否自洽 | ✅ 自洽：pin12=GPIO18、pin32=GPIO12 归 PWM0；pin33=GPIO13、pin35=GPIO19 归 PWM1 | 本篇内部 |
-| 11 | `pinout` 属哪个包、要不要装 | 由 **gpiozero** 提供，**Raspberry Pi OS 默认已装**，不需额外安装 | **官方明文** |
-| 12 | 万用表找 GND 是否成立 | 技术上可行，但**官方无此方法**，「USB 屏蔽 = 系统地」属经验做法，判据应为实测数出 8 个 GND | 无官方依据，见本节 |
+| 11 | `pinout` 属哪个包、要不要装 | 由 **gpiozero** 提供，**Raspberry Pi OS 默认已装**，不需额外安装 | 官方明文 → **板上 `dpkg -S /usr/bin/pinout` = `python3-gpiozero`**（2026-10-19 实测确认，同一轮另证本板 **无 pigpio**，见第十节末） |
+| 12 | 万用表找 GND 是否成立 | 技术上可行，但**官方无此方法**，「USB 屏蔽 = 系统地」属经验做法，判据应为实测数出 8 个 GND | 无官方依据，见本节；`pinout` 不能替代这一条 |
+
+`[板上实测]` **第 13 项：`pinout` 全表复核（2026-10-19，本板，未接负载）**。命令就是 `pinout`，它先自报板子身份（`Raspberry Pi 3B rev 1.2` / `a02082` / BCM2837 / 1GB），再打 J8 对照表；右列偶数脚、左列奇数脚，原样如下（只截针号段）：
+
+```
+ 3V3  (1) (2)  5V      GPIO2  (3) (4)  5V      GPIO3  (5) (6)  GND
+ GPIO4  (7) (8)  GPIO14   GND  (9) (10) GPIO15
+GPIO17 (11) (12) GPIO18  GPIO27 (13) (14) GND
+GPIO22 (15) (16) GPIO23   3V3 (17) (18) GPIO24
+GPIO10 (19) (20) GND      GPIO9 (21) (22) GPIO25
+GPIO11 (23) (24) GPIO8    GND (25) (26) GPIO7
+ GPIO0 (27) (28) GPIO1     GPIO5 (29) (30) GND
+ GPIO6 (31) (32) GPIO12   GPIO13 (33) (34) GND
+GPIO19 (35) (36) GPIO16   GPIO26 (37) (38) GPIO20
+   GND (39) (40) GPIO21
+```
+
+**为什么网上会有一版把 19/21 对调**：一种流传的说法是早期 26 针排针的某个改版（俗称 P1-6，2012 年前的 Pi 1 板）把 SPI0 的 MOSI/MISO 放在与后来相反的位置，旧教程因此沿用了对调的针号。⚠️ 这条说法**本仓未核到官方明文**（官方 `gpio-on-raspberry-pi.adoc` 里没有 19/21 对调的任何注记），只作背景解释，别当依据引用——**本板取用的正确方向由上面 `pinout` 实测给：针 19 = GPIO10 = SPI0 MOSI，针 21 = GPIO9 = SPI0 MISO**。接 SPI 外设前若还要第二重确认，跑 `gpioinfo -c gpiochip0` 看 line 9/10 的功能名，或先拿一根线点 LED 验通断，别照抄任何一张图。
 
 **取用的官方源文件**（发布页对本机返回 403，改用官方仓库 `raspberrypi/documentation` 的 `master` 分支同源文件）：
 
@@ -130,7 +165,7 @@ BCM2837 的所有数据引脚**绝对最大额定电压只有 3.3V**。把 5V �
 
 **顺带修正的两处依据**：第二节的 16mA 与 3.3V 供电口径已按上述官方原文改写；原「3.3V 电源引脚合计约 50mA」在官方文档中查无依据，已删除。
 
-**仍需上板复核**：pin 16 / 18 / 38 的针号归属（官方无文字对照表）；GND 的 8 个具体针号；pin 3 / 5 固定上拉的阻值（官方只确认「有固定上拉」，未给数值）。
+**仍需上板复核**：~~pin 16 / 18 / 38 的针号归属、GND 的 8 个具体针号~~ —— 这三项 2026-10-19 已由本板 `pinout` 逐脚对上（第 13 项），但依据等级仍停在**软件对照表**，不是万用表导通。**还开着的只有两条**：pin 3 / 5 固定上拉的阻值（官方只确认「有固定上拉」，未给数值，1.8kΩ 属社区数据）；第 12 项那条「USB 屏蔽壳对排针 GND 导通」的电气判据，得拿万用表实测才算成立。
 
 ---
 
@@ -163,7 +198,7 @@ GPIO.setmode(GPIO.BCM)      # 之后 GPIO.output(17, ...)
 | 总线 | 引脚 | 用途 |
 |---|---|---|
 | **I2C1** | 3 (SDA)、5 (SCL) | 最多 127 个设备，只需 2 根数据线。首选 |
-| **SPI0** | 19 MISO、21 MOSI、23 SCLK、24 CE0、26 CE1 | 速度高于 I2C，需要 4~5 根线 |
+| **SPI0** | 19 (MOSI, GPIO10)、21 (MISO, GPIO9)、23 (SCLK, GPIO11)、24 (CE0, GPIO8)、26 (CE1, GPIO7) | 速度高于 I2C，需要 4~5 根线。`[板上实测]` 2026-10-19 `pinout` 确认 MOSI 在 **pin 19**、MISO 在 **pin 21**；本篇此处与第三节表原先对调了，已改正 |
 | **UART0** | 8 TXD、10 RXD | 串口，见第六节的坑 |
 | **PWM** | 12（GPIO18）、32（GPIO12）→ PWM0<br>33（GPIO13）、35（GPIO19）→ PWM1 | 硬件 PWM 无抖动，官方明确只有这 4 个 GPIO |
 
@@ -578,7 +613,15 @@ cat /sys/class/gpio/gpiochip512/{label,base,ngpio}  → pinctrl-bcm2835 / 512 / 
 
 三条后果：① 本篇任何 `echo <BCM号> > export` 与 `/sys/class/gpio/gpio<BCM号>/...` 的写法在本板**都要先加 512**，而 `base` 是内核动态分配的，**换内核/换镜像可能整体变**，所以这条路连「可移植的常数」都算不上；② `/dev/gpiochip0` 存在（gpio-cdev 是开的），libgpiod / lgpio / gpiozero 都正常，**没有理由用 sysfs**；③ 想复核自己的编号，唯一稳妥的是 `gpiodetect` + `gpioinfo -c gpiochip0`，而不是照抄任何文档里的数字。
 
-`[板上实测]` 同轮顺手确认的三个库都在（都只 `import`，没碰引脚）：`RPi.GPIO` **装着**且自报 `{'TYPE': 'Pi 3 Model B', 'PROCESSOR': 'BCM2837', 'RAM': '1GB', 'REVISION': 'a02082'}`（第十二节第 2 条「新镜像没有 `RPi.GPIO`」在本板不成立）、`lgpio` 模块可导入（但 `lgpio_version()` 这类函数名与文档写法不一致，具体 API 仍属未验）、`gpiozero` 在 `/usr/lib/python3/dist-packages/`。`pinout` 命令是否存在本轮未跑。
+`[板上实测]` 同轮顺手确认的三个库都在（都只 `import`，没碰引脚）：`RPi.GPIO` **装着**且自报 `{'TYPE': 'Pi 3 Model B', 'PROCESSOR': 'BCM2837', 'RAM': '1GB', 'REVISION': 'a02082'}`（第十二节第 2 条「新镜像没有 `RPi.GPIO`」在本板不成立）、`lgpio` 模块可导入（但 `lgpio_version()` 这类函数名与文档写法不一致，具体 API 仍属未验）、`gpiozero` 在 `/usr/lib/python3/dist-packages/`。
+
+2026-10-19 同一轮把这三条的**来源包**也查了（`dpkg -S` + `python3 -c "import …; print(__file__)"`），结论比「装着」更要紧：
+
+- `import RPi.GPIO` 解析到 `/usr/lib/python3/dist-packages/RPi/GPIO/__init__.py`，属包 **`python3-rpi-lgpio` 0.6**——它是 lgpio 之上的**兼容层**，原生 `RPi.GPIO` 包在本板**并未安装**。第十二节第 2 条那句「`RPi.GPIO` 已停维护、只在旧代码里遇到」在本板成立的方式变了：代码是老 API，底下跑的却是 lgpio，所以**寄存器直写那条推论不能套在本板**（见第十二节第 3 条与第十节 mmap 段的区分）。
+- `pinout` **存在**，`/usr/bin/pinout` 属 **`python3-gpiozero` 2.0.1**（不是 pigpio）。本板 **`pigpio` 未安装**（`import pigpio` → `ModuleNotFoundError`，`dpkg -l` 无此包）——凡引用 `pigs`/`piflash`/`pigpiod` 的段落都得起不了。
+- 随带装着：`libgpiod3` 2.2.1、`python3-libgpiod` 2.2.1、`liblgpio1` 0.2.2、`python3-lgpio` 0.2.2（与第九节的 libgpiod 版本一致，互证）。
+
+`[板上实测]` 2026-10-19 用 `pinout` 复核了第三节全表，原始输出与逐脚结论见第三节末「核对结论与出处」第 13 项。
 
 ### 换 C 能不能更快
 
@@ -623,14 +666,25 @@ cat /sys/class/gpio/gpiochip512/{label,base,ngpio}  → pinctrl-bcm2835 / 512 / 
 ## 十二、常见坑清单
 
 1. **物理针号当成 GPIO 号**——最常见,现象是"点 A 亮 B"。
-2. **新镜像没有 `RPi.GPIO`**,或老镜像没有 `lgpio`,先 `import` 试一次。
-3. **以为异常退出后引脚还停在你写的电平上**——分两路，别混：经 gpio-cdev 请求的线（libgpiod / lgpio / gpiozero / `gpioset`）在文件描述符关闭后由内核释放，线**退回默认态**（输入 + 默认上下拉，即高阻被弱上拉顶着），内核文档 `GPIO_V2_GET_LINE_IOCTL` 明写状态只保证「到 fd 关闭为止」；而直接 mmap 寄存器那条路（`RPi.GPIO`、本篇第十节的 mmap 方案）**没有任何回收机制**，崩溃后就真的保持最后写入的电平，继电器会一直吸合。`finally` 里释放仍然要写，但它不是安全边界——负载的默认关断必须由硬件保证。详见 [`rpi-gpio-robust.md`](./rpi-gpio-robust.md) 第二节。
+2. **新镜像没有 `RPi.GPIO`**,或老镜像没有 `lgpio`,先 `import` 试一次。`[板上实测]` 2026-10-19 本板 `import RPi.GPIO` 成功，但 `dpkg -S` 显示它来自 **`python3-rpi-lgpio` 0.6**（lgpio 上的兼容层），原生 `RPi.GPIO` 包并未安装——「能不能 import」在这块板上不代表「哪个库在跑」。
+3. **以为异常退出后引脚还停在你写的电平上**——分两路，别混：经 gpio-cdev 请求的线（libgpiod / lgpio / gpiozero / `gpioset`）在文件描述符关闭后由内核释放，线**退回默认态**（输入 + 默认上下拉，即高阻被弱上拉顶着），内核文档 `GPIO_V2_GET_LINE_IOCTL` 明写状态只保证「到 fd 关闭为止」；而直接 mmap 寄存器那条路（原生 `RPi.GPIO`、本篇第十节的 mmap 方案）**没有任何回收机制**，崩溃后就真的保持最后写入的电平，继电器会一直吸合。`finally` 里释放仍然要写，但它不是安全边界——负载的默认关断必须由硬件保证。详见 [`rpi-gpio-robust.md`](./rpi-gpio-robust.md) 第二节。
+   `[板上实测]`（源码层，2026-10-19）本板的 `RPi.GPIO` 属**前者**：`/usr/lib/python3/dist-packages/RPi/GPIO/__init__.py` 第一行依赖就是 `import lgpio`，所以在这块板上用 `RPi.GPIO` API 写的代码**并不会**直写寄存器，异常退出后同样由内核收回线。⚠️ 但这只到「走的是哪条路」为止——**「崩溃后引脚确实退回默认态」这条行为还没在这块板上做过**（要接 LED 或万用表、让进程 `kill -9` 掉再看电平）。在实测之前，本节末尾和 robust 篇第二节那条「负载默认关断由硬件保证」的规矩照守不误，别拿这条板上结论去省掉外部关断。
 4. **5 V 直连 GPIO**——烧板子。
 5. **把 `gpio` 和 `gpioset` 当成同一个命令**——参数不兼容。
 6. **libgpiod 1.x / 2.x 抄错**——Buster / Bullseye 是 1.x,Bookworm 起是 2.x,函数名和参数类型都变了,先 `pkg-config --modversion libgpiod`。
 7. **用 `/dev/mem` 而非 `/dev/gpiomem`**——要么被 `CONFIG_STRICT_DEVMEM` 拒绝,要么摸到不该摸的寄存器。
 8. **mmap 写法在 Pi 4 / Pi 5 上照抄**——BCM2711 / BCM2712 的 GPIO 基址完全不同,会往错误地址写。
 9. **忘了 C 也要 root**——`/dev/gpiomem` 和 `/dev/gpiochip*` 都在 `gpio` 组,非 root 直接 open 失败。
+
+## 相关文档
+
+- [`rpi-gpio-robust.md`](./rpi-gpio-robust.md) —— GPIO 健壮写法专章：异常退出与上电默认态、占用冲突、去抖、libgpiod 1.x/2.x 错误处理、长驻程序失效模式、只读复核手段。**本篇给「怎么接、怎么写」，那篇给「什么时候会看起来对、实际错」。**
+- [`rpi-network.md`](../access/rpi-network.md) —— Pi 侧主干：`config.txt` / `cmdline.txt` 路径与代际差异、串口使能、SSH 服务端、WiFi 与显示。
+- [`rpi-ssh.md`](../access/rpi-ssh.md) —— 电脑侧主干：客户端与 `~/.ssh/config`、scp/WinSCP、PuTTY 与串口终端参数。
+- [`rpi-3b-hardware.md`](../hardware/rpi-3b-hardware.md) —— SoC 规格、功耗、`gpu_mem`、型号选型与上手清单（其第 3 节把引脚表整段让给本篇）。
+- [`rpi-status.md`](../hardware/rpi-status.md) —— 观测专章：整机状态读数怎么一把取齐、哪些读数属假读数（含 `gpioinfo` 在 libgpiod 2.2.1 下必须带 `-c` 这一条）。
+- `rpi-gpio-control.md` —— 本篇的前身之一，内容已整体并入第七节起，文件已删除（已删的历史源稿按约定不写成链接）。
+- `docs/README.md` —— 索引层：目录结构与三层含义、跳转索引、按任务的路由表、证据分档与敏感内容规则。
 
 ## 参考
 
@@ -641,9 +695,13 @@ cat /sys/class/gpio/gpiochip512/{label,base,ngpio}  → pinctrl-bcm2835 / 512 / 
 - `lgpio` 库:github.com/gpiozero/lgpio
 - `libgpiod` C 库:kernel.org/doc/html/latest/gpio/libgpiod.html
 
-## 相关文档
+## 变更记录
 
-- `rpi-network.md` — Pi 侧主干：`config.txt` / `cmdline.txt` 路径与代际差异、串口使能、SSH 服务端、WiFi 与显示
-- `rpi-ssh.md` — 电脑侧主干：客户端与 `~/.ssh/config`、scp/WinSCP、PuTTY 与串口终端参数
-- `rpi-3b-hardware.md` — SoC 规格、功耗、`gpu_mem`、型号选型与上手清单
-- `rpi-gpio-robust.md` — GPIO 健壮写法专章：异常退出与上电默认态、占用冲突、去抖、libgpiod 1.x/2.x 错误处理、长驻程序失效模式、只读复核手段
+- 2026-10-19（分目录）：本篇由 `docs/pi/` 根移入 **`docs/pi/gpio/`**，跨分类的相对链接改为 `../<分类>/`，指向索引层改为 `../../README.md`；**章号与散文式引用（「`rpi-xxx.md` 第 N 节」）一条未动**——散文只认文件名，而文件名在全仓唯一。分类依据与机检见 `docs/README.md` 第一节。
+
+- 2026-10-19（新增观测专章）：`docs/pi/hardware/rpi-status.md` 成文，其第七节引用本篇第九节的 libgpiod 2.2.1 `-c` 形态与 chip 分布；「相关文档」补一条指向那篇。
+- 2026-10-19（结构整理）：接入 `docs/README.md` 索引层——篇首统一为 `> 用途` / `> 边界` 加原有的四条证据告诫，新增 `## 本篇结构`；「相关文档」提到「参考」之前并改成相对链接；补本节。章号一~十二**未动**，跨篇引用与本篇内部引用（「第 N 节」「第十二节第 3 条」）全靠它。
+- 2026-10-19（首轮板上实测）：四处口径由 `[板上实测]` 改写——libgpiod 是 **2.2.1**，本篇原来的命令行形态跑不通（第九节）；本板 chip 编号分布与常见写法不同，另有 `/dev/gpiochip4` 符号链接（第九节）；sysfs 用**全局编号**，本板 `base=512`，`echo 17 > export` 直接失败（第十节方案三）；**针 19/21 的 SPI0 方向本篇原先写反**，由本板 `pinout` 改判（第三节表、第三节末核对结论第 13 项、第五节 SPI0 行）。第十节末另记一条包来源：本板 `import RPi.GPIO` 实际由 `python3-rpi-lgpio` 提供，原生 RPi.GPIO 与 `pigpio` 未装，故第十二节第 3 条「mmap 无回收」的后果对**这个名字**不成立（行为实测未做）。
+- 2026-10-15（舍弃 CW32 关联）：原第十二、十三节（Pi 本机 GPIO vs CW32 GPIO、通过 SWD 控制 CW32）整段移除，控制路径表删「外部 MCU」行，末节由「十四」升为「十二」，坑清单由 12 条收敛为 9 条。
+- 2026-10-15（合稿）：本篇成为 GPIO 类唯一主干，`rpi-gpio-control.md` 整体并入第七节起的内容后删除；第三节末「核对结论与出处」建立，V4 对官方 GPIO 文档复核后把五处分歧判给本篇（其中针 21=GPIO10 一条于 2026-10-19 被板上 `pinout` 推翻）。
+

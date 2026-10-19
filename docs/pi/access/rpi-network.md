@@ -1,12 +1,30 @@
 # 树莓派 3B — Pi 侧配置主干
 
-**主语**：本文以树莓派自身为视角，覆盖 Pi 上要改的东西——镜像与账户基线、boot 分区配置文件、网络与取址、显示与无头模式、串口使能与接线、SSH 服务端、出网经 VPN。
-**不在范围**：PuTTY、WinSCP、串口终端参数、`~/.ssh/config` 等电脑侧操作归 `rpi-ssh.md`；40 针完整引脚表与电气参数归 `rpi-gpio-pinout.md`。本文只把它们当对端引用，不复述。
-**定位变更**：本文原为「网络配置」专篇，A1 合稿后成为 Pi 侧主干，文件名不变以免断链；网线直连与 VPN 抢路由的旧结论收在末尾两节，只在走救援路径时看。
+> 用途：树莓派自身要改的一切——镜像与账户基线、boot 分区配置文件、网络与取址、显示与无头、串口使能与接线、SSH 服务端、ttyd、出网经 VPN。
+> 边界：电脑侧操作（PuTTY、WinSCP、串口终端参数、`~/.ssh/config`、递钥与认脸）归 [`rpi-ssh.md`](./rpi-ssh.md)；40 针完整引脚表与电气参数归 [`rpi-gpio-pinout.md`](../gpio/rpi-gpio-pinout.md)；GPIO 的异常行为归 [`rpi-gpio-robust.md`](../gpio/rpi-gpio-robust.md)。本文只把它们当对端引用，不复述。证据分档、升格规则与敏感内容规则见 [`docs/README.md`](../../README.md)，本文不重复定义。
+>
+> 本文原为「网络配置」专篇，A1 合稿后成为 Pi 侧主干，文件名不变以免断链；网线直连与 VPN 抢路由的旧结论收在末尾两节，只在走救援路径时看。
 
-每条标注证据等级：`[事实]` 硬件规格或本机已验证，`[待验证]` 依通用行为或既有文档推断、**尚未在本机跑过**，`[板上实测]` = 2026-10-19 起在这块 3B 上实跑得到（**该档自 2026-10-19 启用，此前全文没有任何一条对实机的测量**）。回填 `[板上实测]` 时必须带上日期、命令与实际输出；只有「从电脑侧观察到板子的现象」的，属电脑侧实测，写在 `rpi-ssh.md`，不升格成本档。
+## 本篇结构
 
-**敏感内容规则（2026-10-19 与 `rpi-ssh.md` 同一条）**：口令、私钥、公钥正文、账户名、主机名、SSID 与局域网 IP 一律不写进仓库，文档继续用 `<用户>`/`<addr>`/`<SSID>` 占位；主机键是指纹类公开材料，只在 `rpi-ssh.md` 第四节作为比对基准落一次。
+- 镜像与默认账户基线
+- 接口盘点
+- boot 分区配置文件（`config.txt` / `cmdline.txt`）
+- 取址：三条路径
+- 上行链路选项（Pi 上网）
+- WiFi 通道（已选定为主通道）
+- 双通道并存时的路由与 DNS
+- 显示输出与无头模式
+- 串口控制台（救援通道）
+- 无头预置与持久化
+- SSH 服务端
+- 网页终端 ttyd（Pi 侧）
+- 排障顺序
+- 出网经 VPN：电脑用 PureVPN，Pi 复用同一订阅
+- 对端环境（压缩）
+- 与 VPN 共存
+- 相关文档
+- 变更记录
 
 ## 镜像与默认账户基线
 
@@ -130,14 +148,43 @@ sudo cp /boot/firmware/cmdline.txt /boot/firmware/cmdline.txt.bak
 
 ### 一次性配置
 
-- `[待验证]` **先设国家码**，再谈连接：`sudo raspi-config` → Localisation Options → WiFi country 设为 `CN`。未设时 brcmfmac 以 `country 00` 运行，可用信道受限，若路由器固定在信道 12/13，Pi 会**完全扫不到**这个 SSID——这是最容易被忽略的「扫不到」成因。
-- 扫描与信号：`nmcli -f SSID,SIGNAL,CHANNEL,BSSID dev wifi list rescan yes`；已连接后看细节用 `iw dev wlan0 link`（`signal`、`frequency`、`tx bitrate`）。
+`[板上实测]` **本板的网络命令都在，但经 SSH 直接敲会「找不到命令」**（2026-10-19）。起因是一次误判，值得整条记住：
+
+- 非交互 `ssh pi '<cmd>'` 的 PATH 实测就是四条：`/usr/local/bin:/usr/bin:/bin:/usr/games`——**不含 `/usr/sbin`**。
+- 于是 `command -v iw` 返回空，看着像「没装」。改用绝对路径复查，五个全在：`/usr/sbin/iw`、`/usr/sbin/iwconfig`、`/usr/sbin/rfkill`、`/usr/sbin/wpa_cli`、`/usr/sbin/ethtool`。**真的没装的只有 `tcpdump`**。
+- 判别规则：**网络类命令一律加 `sudo`（root 的 PATH 含 `/usr/sbin`）或直接写绝对路径**；`command not found` 在这条链路上第一优先怀疑 PATH，不要据此得出「本板缺工具」的结论，更不要因此去 `apt install` 已经在盘上的东西。
+
+链路层读数（`sudo` 后跑通，原样，SSID/BSSID 按敏感规则换成占位）：
+
+```
+$ sudo iw dev wlan0 link
+Connected to <路由器BSSID> (on wlan0)
+	SSID: <SSID>
+	freq: 2437.0
+	signal: -48 dBm
+	rx bitrate: 52.0 MBit/s
+	tx bitrate: 58.5 MBit/s
+$ sudo iw dev wlan0 get power_save
+Power save: on
+$ sudo rfkill list all
+0: hci0: Bluetooth → Soft blocked: yes / Hard blocked: no
+1: phy0: Wireless LAN → Soft blocked: no / Hard blocked: no
+```
+
+- **`Power save: on` 是这条链路上目前唯一抓到的正向嫌疑**：下面「首轮 WiFi 观察」那节列的三个候选里，第 ③ 个（省电模式没关）不是「未验」而是**实测为开着**。因果仍未证，但关掉它是零成本的，见那节的处置。
+- 信号 **-48 dBm**、信道 6（2437 MHz）、速率 52/58.5 Mbit/s → 距离与协商都不差，「信号弱导致掉线」这一支基本可以放下。
+- 蓝牙 **Soft blocked: yes**（软关，本板没在用蓝牙，所以下面那条「3B 经典蓝牙抢 2.4G 天线压吞吐」的风险在当前配置下不成立——它已被关掉。注意这是 rfkill 层的软关，不是 `dtoverlay=disable-bt` 那种彻底摘掉，驱动仍在、重启后是否保持未验）。
+- nmcli 侧同一份读数的替代写法（不需要 `sudo`，PATH 里有）：`nmcli -f GENERAL.STATE,AP device show wlan0` 打出 `GENERAL.STATE: 100 (connected)` 和 `AP[1].SSID/BSSID/MODE/CHAN/RATE/SIGNAL`。⚠️ nmcli 的 `SIGNAL=75` 是它自己的 **0–100 质量刻度，不是 dBm**（dBm 恒为负；`dev wifi list` 与 `device show` 两处读数一致），要与 `iw` 的 -48 dBm 对照时别混单位。
+- `GENERAL.CONNECTION` 实测为 **`netplan-wlan0-<SSID>`**，`/etc/netplan/` 下另有两份 `90-NM-<uuid>.yaml`，nmcli 版本 **1.52.1** → 本板的 WiFi 是 **netplan 与 NetworkManager 共管**。⚠️ 因此下面那些 `nmcli con mod` 的改动到底会不会写进 netplan 那两份 yaml，**本轮没验**（没做过任何修改）；要证的时机就是真改 powersave 之后：改完 `ls -l --time-style=full-iso /etc/netplan` 看 mtime 是否跟着动，再 `reboot` 复读 `sudo iw dev wlan0 get power_save` 是否仍为 `off`。在此之前不要把「nmcli 改了就一定落盘」当既成事实写进别的文档。
+
+- `[待验证]` **先设国家码**，再谈连接：`sudo raspi-config` → Localisation Options → WiFi country 设为 `CN`。未设时 brcmfmac 以 `country 00` 运行，可用信道受限，若路由器固定在信道 12/13，Pi 会**完全扫不到**这个 SSID——这是最容易被忽略的「扫不到」成因。`[板上实测]` 2026-10-19 本板关联在**信道 6**（`sudo iw dev wlan0 link` → `freq: 2437.0`），落在常规信道上，所以这一条在本板不是当前故障的候选。
+- 已连接后看细节首选 `sudo iw dev wlan0 link`（`signal` 给 dBm，见上）；不想用 sudo 就用上一条的 nmcli 写法。
 - 连接：`sudo nmcli dev wifi connect "<SSID>" password "<密码>"`。一条命令即写入 keyfile，重启保留。
 - `[待验证]` 关掉 WiFi 省电模式，否则长任务里会出现首个 SSH 包延迟几百毫秒、以及空闲后掉线再重连：
-  `sudo nmcli con mod "<SSID>" 802-11-wireless.powersave 2`（值 2 = disable），随后 `iw dev wlan0 get power_save` 断言应为 `off`。
+  `sudo nmcli con mod "<SSID>" 802-11-wireless.powersave 2`（值 2 = disable）。**两层断言本板都能读了**（前文的 PATH 结论）：配置层 `nmcli -f 802-11-wireless.powersave con show "<SSID>"` 应为 `2`；运行时层 `sudo iw dev wlan0 get power_save` 应为 `Power save: off`。`[板上实测]` 2026-10-19 未改动前实测为 **`on`**——这条 `[待验证]` 的**前提成立**，改法与生效验证仍待做一次。
 - `[待验证]` 关掉随机 MAC，否则路由器侧的 MAC 地址绑定永远不生效、地址看起来随机变化：
   `sudo nmcli con mod "<SSID>" wifi.cloned-mac-address permanent`，以及 `wifi.scan-rand-mac-address no`。
-  先查当前值：`nmcli -f 802-11-wireless.cloned-mac-address,802-11-wireless.scan-rand-mac-address con show "<SSID>"`。
+  `[板上实测]` 2026-10-19 属性名这条要打个折：本板 nmcli **1.52.1** 把 `802-11-wireless` 的全部属性列出来（`nmcli -t con show "<SSID>" 802-11-wireless`），里面**只有 `mac-address-randomization`，没有 `scan-rand-mac-address`**；`nmcli -f 802-11-wireless.scan-rand-mac-address con show …` 直接报 `invalid field`。本板当前读数：`802-11-wireless.cloned-mac-address: --`、`802-11-wireless.mac-address-randomization: default`。所以回读命令应写成 `nmcli -f 802-11-wireless.cloned-mac-address,802-11-wireless.mac-address-randomization con show "<SSID>"`；`wifi.scan-rand-mac-address no` 这条 mod 在本板**是否能被接受未试过**（属改动，留给用户决定），别照抄就以为一定生效。
 - `[待验证]` 3B 的 WiFi 与蓝牙共用那片 combo 芯片（规格名 BCM43438，驱动名 43430）和同一条天线，经典蓝牙（尤其音频/串口透传）会通过 TDM 仲裁严重压制 2.4G 吞吐。不用蓝牙就彻底关掉：`/boot/firmware/config.txt` 加 `dtoverlay=disable-bt` 后重启，比只 stop 服务干净。注意这条与串口使能相互牵连——关掉蓝牙会腾出 PL011，见「串口控制台」的使能段，叠加后的行为未实测。
 
 ### 地址固定（让电脑有个不变的目标）
@@ -166,13 +213,20 @@ sudo cp /boot/firmware/cmdline.txt /boot/firmware/cmdline.txt.bak
 - 板上侧同时取回：`vcgencmd get_throttled` → **`0x50000`** =  bit16「开机以来发生过欠压」+ bit18「发生过限频」，低四位为 0 即**此刻没在限**；`vcgencmd measure_temp` → `36.5'C`；`dmesg | grep -icE 'under-voltage|brcmf.*error'` → **0**（`dmesg` 在本板非 root 也可读，已另行确认，所以这个 0 不是读不到造成的假阴性）。
 - 地址形态：`ip -4 addr show wlan0` → `/23`、`dynamic`，即 DHCP 且网段比 `/24` 宽，`arp -a` 里同段还有路由器与其它设备，**不是**板子自己编的地址。
 
-**三个候选都没被排除，欠电是目前唯一有实测旁证的那个**（`0x50000` 只说明「发生过」，不能证明这 40 秒由它引起）：① 供电不足导致 WiFi 芯片瞬断；② 2.4G 重关联；③ WiFi 省电模式没关（本节上面那条 `[待验证]`，`iw dev wlan0 get power_save` 本轮**没跑**）。判别顺序建议：先换电源再复现一次（成本最低、能直接否掉 ①），仍发作就 `journalctl -b | grep -iE 'wlan0|brcmf|deauth'` 看发作时刻有没有关联层日志——**这条要等下一次发作**，本轮没抓到。
+`[板上实测]` 2026-10-19 复测补了两条，候选的排序因此变了：
+
+- **重启复测否掉了「历史记录」这一解释**：`sudo shutdown -r now`（01:07:30）之后约 46 秒、板子空载刚起，`get_throttled` 已经是 `0x50000`，起后 2 分钟、9 分钟两次复读都还是它。→ 欠压是**当下正在发生**的，不是上一次长跑留下的锁存记录（详见 [`rpi-3b-hardware.md`](../hardware/rpi-3b-hardware.md) 第 4.1 节）。这加重了候选 ①，但仍**没有**任何一条内核日志把欠压和这次 40 秒连起来（`dmesg` 里 `under-voltage|brcmf.*error` 计数为 0）。
+- **候选 ③ 由「未验」升为「实测成立的前提」**：`sudo iw dev wlan0 get power_save` → **`Power save: on`**，且连接侧 `802-11-wireless.powersave` 是 `0 (default)`（等于没管）。注意本板 `iw` 在 `/usr/sbin`，裸敲会 `command not found`，必须带 `sudo`——本节上面那句「本轮没跑」就是因为这个 PATH 坑误判成工具缺失，现已跑通。省电开着**恰好**是本节上面那条 `[待验证]` 描述的「空闲后掉线再重连」的成因前提，所以三个候选里它现在是唯一有正向读数的。
+- 顺带读了链路质量：`signal: -48 dBm`、信道 6、`rx/tx bitrate 52/58.5 MBit/s`、`wpa_cli status` → `wpa_state=COMPLETED`、`rfkill` WiFi 未软关。→ 「信号差 / 被软阻塞 / 没关联上」三条基本可以放下。
+- ⚠️ 有一条**取证时机没抓住，别当成做过**：发作的时刻没法预知，`journalctl` 只能在事后回看**那一个开机段**——本板 01:07 重启过一次，而 40 秒那次发作发生在**重启之前**，所以重启后的 journald 里根本没有那次发作的记录（`journalctl -b` 只覆盖当前 boot）。要看关联层日志，只有两条路：① 从现在起等下一次发作，发作后**不要再重启**，立刻 `journalctl -b | grep -iE 'wlan0|brcmf|deauth|roam'`；② 加一个后台取样器（板侧每秒记 `iw ... link` 与 `ping -c1 <网关>` 到文件），下次发作自动落盘。要不要走 ② 由用户定，本轮没有起任何常驻探针。
+
+**处置建议（按成本排序，均未执行，等用户点头）**：① 先换电源/换线，重启后读 `get_throttled` 应回到 `0x0`，同时观察不可达是否还发作——一次动作同时检验候选 ①；② 关掉 WiFi 省电：`sudo nmcli con mod "netplan-wlan0-<SSID>" 802-11-wireless.powersave 2`，回读 `sudo iw dev wlan0 get power_save` 应为 `off`（改完是否写回 netplan 见本节开头那条未验事项）；③ 若前两条都做了仍发作，才轮到 2.4G 重关联与路由器侧（信道、双频合一、DHCP 租约）。
 
 另记一条与本节无关但会影响后续所有实测的：`[板上实测]` `/var/log/auth.log` 在本板不可用（见「首轮板上基线」），凡文档里靠读该文件排障的写法都要换成 `journalctl`。
 
 ### 排障（WiFi 专有，接在「排障顺序」的链路层之前）
 
-- `rfkill list all` → 若有 `Soft blocked: yes` 则 `rfkill unblock wifi`。
+- `rfkill list all` → 若有 `Soft blocked: yes` 则 `rfkill unblock wifi`。`[板上实测]` 2026-10-19：**必须写成 `sudo rfkill list all`**——`rfkill` 在 `/usr/sbin`，而经 SSH 的非交互 PATH 不含该目录，裸敲 `rfkill` 会 `command not found`（见本节开头的 PATH 实测）。本板读数：WiFi `Soft blocked: no`（没有被软关，这条排障对本板不成立），反倒是**蓝牙** `hci0: Soft blocked: yes`。不想用 sudo 时 `nmcli radio wifi` 也能读 `enabled/disabled`，但它只给总开关、给不出 hard/soft 两种阻塞的区分。
 - `sudo systemctl status NetworkManager wpa_supplicant` 与 `journalctl -u wpa_supplicant --no-pager | tail -30`；关联是否成功看 `wpa_cli status` 的 `wpa_state`，只有 `COMPLETED` 算过，停在 `SCANNING` 是找不到网络（信道/国家码），停在 `AUTHENTICATING` 或 `4WAY_HANDSHAKE` 多为密码错或加密不匹配（`[待验证]` 路由器设为仅 WPA3-SAE 时，3B 这代 43430/43438 芯片未必能关联，先在路由器上放开 WPA2/WPA3 混合模式再试）。
 - `dmesg | grep -i brcmfmac` → 驱动枚举失败通常是供电不足或 SDIO 问题，与配置无关。
 - 分频段确认：3B 无 5G，路由器若开了「双频合一」且 Pi 被挤到弱信号侧，可在路由器上把 2.4G 单独命名以便强制连接。
@@ -279,6 +333,16 @@ systemctl get-default                        # 下次开机进哪个目标
 | 无头跑截图/浏览器 | `framebuffer_width/height` | 否 |
 | 接老电视/仅 AV 线（3B） | 复合视频默认已开，制式用 `sdtv_mode=2`（PAL） | 接电视 |
 | 内存不够 | 切 `multi-user.target`，最省 | 否 |
+
+### 关屏省资源：先量到的是谁在占（`[板上实测]` 2026-10-19）
+
+「关屏能省多少」的答案**不是驱动，是整套桌面**。本板实测：`systemctl get-default` → `graphical.target`，`lightdm` **active**，自动登录会话拉起 **labwc**（PPID 是 lightdm 的 autologin session scope），wayvnc / wayvnc-control / wf-panel-pi / `pcmanfm --desktop` / 三个 `xdg-desktop-portal` / wireplumber 全在这条链上，**RSS 合计 249 MB（全板 921 MB）**。
+
+- **依赖链决定关哪一层最有效**：`graphical.target` → `lightdm.service` → session scope → labwc → 其余。**改顶层一个开关，下面全塌**，不需要逐个 `mask`。
+- `vc4-kms-v3d` 与 `/dev/dri/card0` 属驱动层，注释 overlay 才是真无 DRM，但会连带 `camera_auto_detect=1` 失效，且**注释后 boot 早期能否出图本板未验**（`[待验证]`）。`gpu_mem=76M` 在 KMS 下的最小允许值同样 `[待验证]`。
+- **关屏的前置条件本板已满足**：`/dev/serial0 -> ttyS0`（mini UART，`config.txt` 有 `enable_uart=1`），`serial-getty@ttyS0.service` 为 **active**（`enabled-runtime`）。关掉图形控制台后串口仍是登录入口。
+- **一条不可自动恢复的代价**：远程看画面靠 `wayvnc.service` + `wayvnc-control.service`（后者 `BindsTo=wayvnc.service`），随顶层一起消失。SSH 与 ttyd 不受影响。
+- **四个档位按代价递增，本板停在第几档由用户定点（均未执行）**：① `sudo systemctl set-default multi-user.target`（可逆，免重启生效用 `isolate`），省约 249 MB；② 在 ① 之上 `sudo systemctl disable getty@tty1`，并把 `cmdline.txt` 的 `console=tty1`、`quiet splash`、`plymouth.ignore-serial-consoles` 删掉只留 `console=serial0,115200`——省不了内存，买到「所有输出只从串口走」这条确定性；③ 注释 `dtoverlay=vc4-kms-v3d` 与 `max_framebuffers=2`，真无 DRM 与 HDMI 输出，代价是 `camera_auto_detect` 失效、且要重启才生效（改坏时**串口就是唯一救援入口**，所以 ② 必须排在 ③ 前面做）；④ 只在走完 ③ 之后才谈 `gpu_mem` 下调。①② 属系统层、可当场回退，③④ 属固件层。
 
 ### 显示侧验证
 
@@ -387,7 +451,7 @@ systemctl list-units --type=target --state=active  # 当前活跃的 target，�
 按顺序定位，每步都有明确判据，不要跳：
 
 0. 系统在不在跑：接上串口看有没有滚动到登录提示符。这一步能把「系统没起来/卡在服务」与「系统活着但网络不通」分开，是后面所有步骤的前提；串口本身没输出则回到「串口排障」表。没有 USB-TTL 模块时跳过本步。
-1. 链路层：主通道是 WiFi，先 `iw dev wlan0 link` 判是否 `Connected` 并看 `signal`/`frequency`；走有线时才 `ip link show eth0` 看 `NO-CARRIER`、`ethtool eth0 | grep -i link` 判 `Link detected: yes`。这一层不过，后面全部无意义。
+1. 链路层：主通道是 WiFi，先 `sudo iw dev wlan0 link` 判是否 `Connected` 并看 `signal`/`frequency`；走有线时才 `ip link show eth0` 看 `NO-CARRIER`、`sudo ethtool eth0 | grep -i link` 判 `Link detected: yes`。`[板上实测]` 2026-10-19 这两条都要带 `sudo`（`iw`、`ethtool` 在 `/usr/sbin`，SSH 非交互 PATH 里没有）；本板当时实测 `sudo ethtool eth0` → `Link detected: no`、`Speed: Unknown!`，即**网线没插**，所以有线侧的带宽结论仍属未验。这一层不过，后面全部无意义。
 2. 地址：`ip -4 a` → WiFi 正常应拿到路由器网段（如 `192.168.1.x`）；eth0 直连场景才有 `10.99.`（静态生效）、`192.168.137.`（ICS DHCP）、`169.254.`（link-local 兜底）；全无 = 取址失败，查 `journalctl -u NetworkManager --no-pager | tail -40`。
 3. 路由：`ip route` → 应有一条 `default via <路由器或ICS地址> dev wlan0` 或 `dev eth0`，且 `ip route get 10.99.0.1` 回 `dev eth0` 且不含 `via`。
 4. 服务：`ss -tlnp 'sport = :22'`、`systemctl is-active ssh`。
@@ -473,16 +537,23 @@ Pi 侧三个必查点：
 - 断言命令（电脑侧）：`Find-NetRoute -RemoteIPAddress 10.99.0.2`，`InterfaceAlias` 应为物理以太网适配器，`IPv4NextHop` 为空或链路本地。
 - `[待验证]` 例外：企业 VPN 显式加覆盖私有网段的路由，或启用防泄漏丢弃非隧道流量。此时找 split-tunnel 豁免或换 `172.28.0.0/24`。
 
-## 与其他文档的分工
+## 相关文档
 
-- `rpi-ssh.md` —— 电脑侧主干：客户端与 `~/.ssh/config`、known_hosts、公钥推送命令、scp/WinSCP、PuTTY 与串口终端参数、RealVNC Viewer。
-- `rpi-gpio-pinout.md` —— 40 针完整引脚表与电气参数；本文只列串口那三根线。
-- `rpi-3b-hardware.md` —— SoC 规格、功耗、型号选型与上手清单。
-- `rpi-headless-access.md`、`rpi-display-headless.md` —— A1 合稿的来源，内容已全部并入本文与 `rpi-ssh.md`，两文件已由编排会话删除。文内若再出现同名提法，属历史记录。
+- [`rpi-ssh.md`](./rpi-ssh.md) —— 电脑侧主干：客户端与 `~/.ssh/config`、known_hosts、公钥推送命令、scp/WinSCP、PuTTY 与串口终端参数、RealVNC Viewer。
+- [`rpi-gpio-pinout.md`](../gpio/rpi-gpio-pinout.md) —— 40 针完整引脚表与电气参数；本文只列串口那三根线。
+- [`rpi-gpio-robust.md`](../gpio/rpi-gpio-robust.md) —— GPIO 在什么情况下给出「看似正常实则错误」的结果。
+- [`rpi-status.md`](../hardware/rpi-status.md) —— 观测专章：本文各项配置生效后，用哪几条只读命令确认板子状态、以及哪些读数属假读数。
+- [`rpi-3b-hardware.md`](../hardware/rpi-3b-hardware.md) —— SoC 规格、功耗、型号选型与上手清单。
+- `rpi-headless-access.md`、`rpi-display-headless.md` —— A1 合稿的来源，内容已全部并入本文与 `rpi-ssh.md`，两文件已删除（写作约定：已删的历史源稿不写成链接）。文内若再出现同名提法，属历史记录。
 - ~~待编排会话跨稿同步（V5）：`rpi-ssh.md` 的示例用户名~~ **已完成（2026-10-15，编排会话）**：`rpi-ssh.md` 的 config 由 `User <pi-user>` 改为 `User <用户>`，第一节与第十一节涉及默认账户的两处「待 V5」标注按本裁决落地，`Host pi` 按约定保留为别名。本板镜像落在裁决哪一边仍 `[待验证]`。
 
-## 状态
+## 变更记录
 
+- 2026-10-19（分目录）：本篇由 `docs/pi/` 根移入 **`docs/pi/access/`**，跨分类的相对链接改为 `../<分类>/`，指向索引层改为 `../../README.md`；**章号与散文式引用（「`rpi-xxx.md` 第 N 节」）一条未动**——散文只认文件名，而文件名在全仓唯一。分类依据与机检见 `docs/README.md` 第一节。
+
+- 2026-10-19（新增观测专章 + 关屏实测）：① `docs/pi/hardware/rpi-status.md` 成文，本篇「串口控制台」的可用性判据被它引用，「相关文档」补一条指向那篇；② 「显示输出与无头模式」新增**关屏省资源**小节，把本轮实测的 249 MB 桌面栈、`graphical.target → lightdm → labwc → wayvnc` 依赖链、串口 getty 已 active 这一前置条件，以及四档方案（均未执行）落成板上结论——该节此前四条 `hdmi_*` 全是手册层，本篇第一次有「关屏到底省多少」的数。**未做任何配置改动。**
+- 2026-10-19（结构整理）：本篇接入 `docs/README.md` 索引层——篇首改为 `> 用途` / `> 边界` 两行加一条定位说明，证据分档与敏感内容规则**上收到索引层**（内容未删，只是不再在各篇重复定义），新增 `## 本篇结构` 章级目录；「与其他文档的分工」更名为 `## 相关文档`、「状态」更名为 `## 变更记录`（与其余四篇同尾块名目），活引用改成相对链接。**章号与章序未动**：跨篇引用写的是「第 N 节」「§4.1」，重排会全部指错。
+- 2026-10-19（同日续测，本窗口经 SSH 执行）：① **纠正了一条我自己上一轮写错的判断**——`command -v iw` 空曾被读成「本板未装 `iw`/`iwconfig`/`rfkill`/`wpa_cli`/`ethtool`」，实际是**非交互 SSH 的 PATH 不含 `/usr/sbin`**（实测四条，`-tt` 强给 pty 也不补），五个工具在 `/usr/sbin` 全都在，真缺的只有 `tcpdump`；「WiFi 通道」开头据此重写成一节带绝对路径的复查记录，`iw`/`rfkill`/`ethtool` 三处命令统一加 `sudo`，排障顺序第 1 步同步改。② **`sudo iw dev wlan0 get power_save` → `Power save: on`**，且连接侧 `802-11-wireless.powersave` 是 `0 (default)` → 「首轮 WiFi 观察」那三个候选里，省电模式这一支从「未验」升为**前提实测成立**（因果仍未证）；链路质量同时读了：`-48 dBm`、信道 6、`52/58.5 MBit/s`、`wpa_state=COMPLETED`、WiFi 未被 rfkill 软关、蓝牙反而是软关状态（故「3B 蓝牙抢天线」的风险在当前配置下不适用）。nmcli 侧的替代读数与单位坑（`SIGNAL=75` 是 0–100 质量刻度不是 dBm）一并记入。③ **`sudo rfkill list all`、`sudo ethtool eth0`（`Link detected: no`，网线没插）、`sudo wpa_cli status` 三条本板可用**，前提是带 `sudo` 或写绝对路径。④ **netplan 与 NM 共管**这条现状查出来了：`GENERAL.CONNECTION` 是 `netplan-wlan0-<SSID>`、`/etc/netplan/` 有两份 `90-NM-<uuid>.yaml`、nmcli 版本 1.52.1；`nmcli con mod` 会不会写回 netplan **未验**（本轮没做任何修改），要证的时机是真改 powersave 之后。⑤ 属性名一坑：本板 nmcli 的 `802-11-wireless` 属性清单里**没有 `scan-rand-mac-address`**，只有 `mac-address-randomization`，本文原来的回读命令按 `-f` 直接写会报 `invalid field`，已改；那条 `mod` 命令能否被接受仍未试（属改动，留给用户）。⑥ **`iw dev wlan0 link` 用的那次误判也记进流程账**：我拿记忆里「上一次发作时刻」去查 `journalctl --since`，那个时间在本次 boot 之前（01:07 重启过），查的是未来窗口，`-- No entries --` 不构成任何证据——事后取关联日志必须先确认发作与当前 boot 同段，这条已写进「首轮 WiFi 观察」的取证段。
 - 2026-10-19（首轮板上实测，接入轮，本窗口经 SSH 执行）：**本文启用 `[板上实测]` 一档**，此前全文零实测的状态结束。落地的五处：① 「镜像与默认账户基线」新增**首轮板上基线**小节，四条判据全套跑完——Raspbian 13 (trixie)、内核 `6.12.47+rpt-rpi-v7`（32 位 v7，与 3B 相符）、`/home` 无 `pi`、`sshd` **enabled**、boot 分区**无 `ssh`/`userconf.txt`**（→ 本板不是 boot 预置法开的 SSH），V5 那句「本板落在哪一边手册裁不了」就地改为已裁；② 「仍需上板实测」表**三行升格为已核**：KMS **默认启用**（`config.txt` 第 26 行未注释的 `dtoverlay=vc4-kms-v3d` + `/dev/dri/card0`）、`gpu_mem` 实际 `76M` 且 `get_config int` 里无 `gpu_mem` 行（默认推导对上）、`enable_tvout=1` 读到（V1 的文档默认值首次与实测一致）；未动的两行写清了为什么仍未验（DNS 回读——本板仍是 DHCP `/23` `dynamic`；复合视频画面——没插 AV 线）；③ WiFi 节新增**一次约 40 秒整体不可达**的观察（ICMP 与 TCP 同刻对照、发作后 3 分钟 ARP 绑定不换址、`get_throttled=0x50000` 即「发生过欠压+发生过限频」而此刻未限、`dmesg` 里 brcmf/under-voltage 计数 0），**根因未定**，三个候选一个都没排除，判别顺序写明「先换电源」；④ 新增 `/var/log/auth.log` **在本板不可用**（认证记录只在 journald），凡依赖该文件的旧写法都要换；⑤ 「权限不对→sshd 静默拒公钥」这条**本板仍未真正观察到**，首轮那次失败的内容原因是 `authorized_keys` 里的公钥与客户端不是同一把，排障路径见 `rpi-ssh.md` 第五节。**敏感口径本条一并确立**：账户名、主机名、口令、公钥正文、局域网 IP 一律不入库，文档继续用占位符。
 - 2026-10-15（编排会话跨稿同步）：V3 由 `minimax-a` 判「无线芯片是本篇错」，同步时改判为**命名层次差异，两边都引到了官方原文**——产品页与 2016 发布稿写 BCM43438（`raspberrypi.com/products/raspberry-pi-3-model-b` 的 Specification 段；`raspberrypi.com/news/raspberry-pi-3-on-sale`），而 Debian `firmware-brcm80211` 为 3B 提供的是 `brcmfmac43430-sdio.raspberrypi,3-model-b.txt`，即驱动/固件侧归入 43430 一族。接口盘点据此改成双名并列并给出用名规则；排障两处与 WiFi 段同步。顺带把 V3 留作「无法裁决」的 **BLE 裁掉**：官方两处（3B 产品页、《Raspberry Pi product series explained》里 3B 那行「Bluetooth 4.1, Bluetooth Low Energy (BLE)」）都明写 3B 带 BLE，3B+ 发布稿的「加入 BLE」是文案不严谨，不属反证。另记一条：`raspberrypi.com` 的 3B 产品页**并未下架**，V3 报的 404 与本会话早前的 403 一样是抓取被拦，搜索引擎索引里该页规格段完整可读——所以本篇的官方依据不只有旧站。仍是手册层结论，板上复核 `btmgmt -i hci0 info`、`dmesg | grep -i brcmfmac`，无 `[待验证]` 升格。
 - 2026-10-15（V5 手册核对，本窗口）：最后一条未裁决的分歧「新镜像默认账户与 SSH 是否预置」由官方文档裁完，两说不再并存——**当前镜像不预置 `pi`、默认禁用 SSH**（`remote-access/ssh.adoc` 原文「By default, Raspberry Pi OS disables the SSH server.」，账户由 `getting-started/install.adoc` 的 Imager *User* 子标签或 `configuring.adoc` 的首启向导创建）；`pi`/`raspberry` 直连只适用于早期镜像。官方文档自身的滞后解释了说法一为何流传：issue #2537（2022-05-11）首句已写「Now the default user has been removed…」，示例里的 `pi`/`raspberry` 却到 PR #3310（分支 `default-user-retcon`，2023-12-08 合并）才清干净。无头启用 SSH 的官方预置法是 boot 分区**同时**放空 `ssh` 与 `userconf.txt`（`setting-up.adoc` 的「Manual setup for SSH」，哈希用 `openssl passwd -6`），只放 `ssh` 不足以登录。据此本文全部示例用户名改为 `<用户>` 占位（含 ttyd unit 的 `User=`），基线节的探测命令把 `id pi` 换成 `ls /home`；`bootfs` 里 `wpa_supplicant.conf` 自 Bookworm 起失效原为推断，现补上官方原文。**仍未裁决**：移除动作对应哪一次镜像发布，官方不按发布日期陈述，本机装的又是哪一张，维持 `[待验证]` 并把四条板上判据写进「仍需上板实测」。本轮**未新增任何实测**，无 `[待验证]` 升格；`rpi-ssh.md` 的同名示例未改（认领在 qoder-b），只在「与其他文档的分工」留了同步提示。
@@ -499,4 +570,5 @@ Pi 侧三个必查点：
 - 2026-10-15 纠错：初版把 wlan0 写成与 eth0 共用 USB 2.0 总线，实际 3B 无线走 SDIO、只有 smsc95xx 以太网在 USB 上。涉及总线归属的推断已全部复核。
 - 2026-10-15：成文，**全部未实机验证**。未知项清单：SD 卡镜像代际与默认账户/SSH 基线（决定「连进去」的一切前提）、无头预置与静态写法随代际分叉、显示侧 4 个键名/默认值、PureVPN 后台能否导出配置文件与专用密码机制。
 - 下一步顺序：跑「镜像与默认账户基线」的四条判据确认本板落在哪一边（该节已由官方文档裁决，板上只需确认、不再择一）→ 落实「仍需上板实测」表里的图形驱动路径一条（决定 `hdmi_*` 旧键在这台 3B 上生效与否）→ 配 WiFi 主通道那四项（国家码、随机 MAC、省电、蓝牙共天线）→ 用「排障顺序」0–5 逐条跑通 → 后台拿 VPN 配置（`.conf` 优先，其次 `.ovpn`）→ 装 wireguard-tools 或 openvpn 并连上 → 验证三连。link-local、静态直连与路线 A/B（借电脑代理、自跑 TUN 内核）留作备选，不排在关键路径上。
-- 本窗口是 linked worktree，只迭代 `docs/pi/rpi-network.md` 与本窗口 context；`.ai/current.md` 与 `.ai/timeline.md` 归编排会话写。
+  `[板上实测]` 2026-10-19 更新：**前四步已跑完**（基线四条判据全套、KMS 与 `gpu_mem` 已核、SSH 免密接入可用），WiFi 四项里国家码与信号类候选已排除，省电实测为 `on` 但**未改动**，随机 MAC 一项未验；**剩余真正未做的只有 VPN 那三步**。另多出一条排在它们前面的硬件待办：欠压复测，见 `rpi-3b-hardware.md` §4.1。
+- 本文归属：2026-10-19 起本仓由单一工作窗口推进，多窗口并行约定已退役；现状与未完成事项写 `.ai/current.md`，决策与历史结论写 `.ai/timeline.md`。
