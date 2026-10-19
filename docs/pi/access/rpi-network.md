@@ -488,8 +488,10 @@ systemctl list-units --type=target --state=active  # 当前活跃的 target，�
 
 ### 使能与内核输出
 
-- `[待验证]` `config.txt` 里 `enable_uart=1`：使能板载串口硬件并把波特率锁住。3B 的 PL011（UART0）默认被蓝牙占用，无头串口调试时常配合 `dtoverlay=disable-bt` 一起用；两者叠加的确切行为需实测确认。`[事实]` 不锁波特率时，走 mini UART 会随 ARM 频率变化而漂移，表现为乱码。
-- `[待验证]` `cmdline.txt` 默认含 `console=serial0,115200`，所以开箱就能看到完整启动日志（内核各阶段、首次开机 SD 卡扩容进度、登录提示符）。
+- `[板上实测]` **本板的控制台确实走 mini-UART，且波特率参考时钟是动态的**（2026-10-19，这条直接决定第一次插串口会不会乱码）：`readlink /sys/class/tty/ttyS0/device` → **`3f215040.serial`** = AUX mini-UART（PL011 在 `7e201000`，已被蓝牙占走，与上一行一致）；`vcgencmd measure_clock core` → **400 MHz**，`scaling_governor` = **`ondemand`**，`config.txt` 里**只有 `enable_uart=1`（第 49 行），没有 `core_freq` 也没有 `force_turbo`**。→ **后果：core 时钟随负载变，mini-UART 的分频跟着变，115200 会漂**，表现就是上面排障表的「满屏乱码」，**而且它不是接线错**。常见修法是 `config.txt` 加 `core_freq=250`（把参考时钟钉住），**属固件层改动、必须重启**；`[待验证]` 本板加完之后长时间传输是否不再漂，以及 250 与当下 400 的差是否会在其它地方留副作用，都没测。**鉴别顺序**：先按接线三查（交叉/共地/COM 号），接线确认无误再怀疑这一条。**同日 16:20 串口线接通后的实测（`[对端实测]`，电脑侧 COM9 发 CR）**：空载状态下 115200 收到的是**完全干净**的 `<主机名> login:`，连发两次逐字节相同——**漂移没有发生**。所以这条风险的当前定性是「机制在、空载未复现、负载下未测」，**不要照它去改 `config.txt`**，等真撞到乱码再动 `core_freq=250`。
+- `[板上实测]` **串口控制台已端到端打通**（2026-10-19 16:20）：三根线（板 pin 8 → 模块 RX、pin 10 ← 模块 TX、pin 6 ↔ GND，**模块 VCC 不接**）＋ 电脑侧 115200 8N1 Flow=None，发一个 CR 即回登录提示符。**② 把 `cmdline.txt` 里的 `console=tty1` 摘掉之后，串口确实是唯一非网络控制台**，这条由「推断」变成「实测可用」。⚠️ 登录提示符里带**主机名**，贴日志或截图前按 `docs/README.md` 第五节处理。
+- `[待验证]` `enable_uart=1` 之外，无头串口调试常配合 `dtoverlay=disable-bt` 把 PL011 让出来（3B 的 PL011 默认归蓝牙）；**两者叠加的确切行为本板未实测**，且关掉蓝牙后 `serial0` 指向哪个控制器、控制台会不会换端口都要重新读，别照抄。
+- `[对端实测]` `cmdline.txt` 含 `console=serial0,115200` 时串口能出登录提示符（2026-10-19 16:20，电脑侧 COM9 发 CR 即回 `<主机名> login:`，两次逐字节相同）。**内核各阶段那一段启动日志本板未复验**——② 已改过 `cmdline.txt`，且这次是接好后发的 CR、没赶上开机输出；要看完整启动日志得重启并同时开着串口。
 - `[待验证]` 想同时在内核 tty1 也看到日志可追加 `console=tty1`，两项并存写法：
 
   ```
@@ -506,7 +508,7 @@ systemctl list-units --type=target --state=active  # 当前活跃的 target，�
 | 全空白、按键无反应 | TX/RX 没交叉；没接 GND；或 COM 号选错（电脑侧） |
 | 满屏乱码 | 波特率不对；没交叉；或波特率未锁（见上 `enable_uart=1`） |
 | 只有回显没有输出 | TX/RX 反了 |
-| 完全无反应 | 板子没启动、供电不足、模块坏、驱动未装（设备管理器里看不到 COM 口） |
+| 完全无反应 | 板子没启动、供电不足、模块坏、**或电脑侧根本没枚举出口**——后者属物理层（线/口/CC），判据与排查归 `rpi-ssh.md` 第八节「找到口」，在本篇之前就该排掉 |
 | 输出到一半断 | USB 延长线或供电不足，换短线、换口 |
 
 开机卡住不动就用串口日志看最后一行停在哪儿，比临时找显示器快；这也是「排障顺序」第 0 步的执行手段。
@@ -657,6 +659,8 @@ Pi 侧三个必查点：
 
 ## 变更记录
 
+- 2026-10-19（串口接通，同日第二轮）：「使能与内核输出」加一条 `[对端实测]`——三根线接 pin 8/10/6、电脑侧 115200 8N1 Flow=None，**COM9 发 CR 即回 `<主机名> login:`**，串口控制台端到端可用；同一条把 mini-UART 波特率漂移的定性收窄成「机制在、**空载未复现**、负载下未测」，并明确**不照它改 `config.txt`**。`console=serial0` 那条由 `[待验证]` 升 `[对端实测]`（只升登录提示符那半句，内核启动日志未复验）；排障表「完全无反应」改为指向 `rpi-ssh.md` 第八节的枚举判据。⚠️ 登录提示符带主机名，外发前按索引层第五节处理。
+- 2026-10-19（开始建物理串口）：「使能与内核输出」新增一条 `[板上实测]`——**本板控制台确实是 mini-UART**（`ttyS0` → `3f215040.serial`），`measure_clock core` = **400 MHz** 且 governor = `ondemand`，`config.txt` 里**没有 `core_freq`/`force_turbo`**，只有 `enable_uart=1`（第 49 行）。→ **排障表里「满屏乱码」这一行多了一个非接线根因：core 时钟随负载动 → 波特率漂**。常见修法 `core_freq=250` 要重启，本板加后是否真不漂 `[待验证]`。原 `disable-bt` 那条拆开保留并补「关蓝牙后 `serial0` 指向要重新读」的警告。
 - 2026-10-19（回答「屏幕现在是不是不能用了」）：「显示输出与无头模式」新增**「①②④ 之后显示层的真实现状」**一节。`[板上实测]` 结论是「**没关死，只是当前没人往屏上画**」：③ 未做所以 `card0-HDMI-A-1` 与 `/dev/dri/card0` 俱在（`status=disconnected` 只代表当下没插线），① 里 `lightdm` 单元本身仍 `enabled`、`labwc`/`wayvnc` 可执行文件都在盘上，② 才是让屏变黑的那一层——`vtcon*/name` 只剩 `(S) dummy device`。判据三条：屏上有没有字看 `vtcon` 不看 `is-enabled lightdm`；`disconnected` ≠ 已禁用 HDMI；**`gpu_mem=16` 没缩掉 `CmaTotal`（仍 256 MB）**，④ 砍的是固件侧 VCHI 不是内核连续内存池。**④ 对真接屏出图的影响仍未实测**，本板从头到尾没插过显示器。回退命令落到该节，未做任何新配置改动。
 - 2026-10-19（关屏 ④ 执行，本窗口经 SSH 三轮重启做 A/B）：新增**「④ 的执行实录」**。`config.txt` 追加 `gpu_mem=16`（备份 `.bak`）后重启——`get_mem` 回 `16M/998M`、`free` total **921 → 970**，③ 没做。**推翻本仓旧口径两处**：① 「④ 只在走完 ③ 之后才谈」不成立，KMS 开着照样能降到 16；② 「`gpu_mem` 在 KMS 下的最小允许值 `[待验证]`」就地升格为「16 可用」。**新查到的代价不在显示在 VCHI**：`gpu_mem=16` 时 `vc_sm_cma_vchi_init` 与 `bcm2835_mmal_vchiq` 报 `-22`、`/dev/video*` 13 个节点整个消失（默认那轮 0 条失败）——本板无相机故当下无感，要用 `rpicam-*`/libcamera 须抬回。方法账一条：本板 journald **非持久**，跨 boot 对照必须改前当场取。顺带照出 ① 的后遗症：`rpi-connect-wayvnc.service` 每 5 秒重试失败刷 `journalctl -p err`，未处理。
 - 2026-10-19（关屏 ①② 执行，本窗口经 SSH 执行）：「显示输出与无头模式」的关屏小节由**方案层升为已执行层**。① `set-default multi-user.target` ＋ `isolate` 当场实测 used 244 → 194（**50 MB，不是旧记的 249**——249 是桌面会话满开时的合计，执行前 wayvnc 已 `inactive`），残留的 portal/wireplumber 经 cgroup 判认为 SSH 自身的 user session；② `disable getty@tty1` ＋ 改写 `cmdline.txt`（删 `console=tty1`/`quiet splash`/`plymouth.ignore-serial-consoles`，逐 token `diff` 核过、仍一整行、`.bak` 留底），再起 `sudo reboot` 复验：新 cmdline 生效、`getty@tty1` `disabled`+`inactive`、串口 getty 仍 `active`、**① 重启后保住**、全新 boot used 136。同时撤回上一条里我自己写错的一句：文件原文是 `console=serial0,115200`，`/proc/cmdline` 显示 `ttyS0` 是设备树 alias 被内核解析，**不是冲突**（判据：比 cmdline 要成对读文件值与运行时值）。`vc4-kms-v3d` 未动（属 ③）。

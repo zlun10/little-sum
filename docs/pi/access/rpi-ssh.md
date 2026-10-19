@@ -31,7 +31,7 @@
 | 默认密钥轮询 / 无 config 时 | 9.9p1 无 `id_dsa`、9.5p2 有 ⇒ `IdentityFile` + `IdentitiesOnly yes` 锁死。`ssh -G <任意名>` 给 `user zheng`、`port 22`、`stricthostkeychecking ask`：不写 `User` 就拿 Windows 用户名去登，`ask`＋非交互＝立即失败 | `[本机实测]` |
 | 失败退出码 | 解析失败、无监听、远端 `exit 255` **全是 255**，仅凭退出码不可判别 | `[本机实测]` |
 | config / 密钥 / agent / known_hosts | `Host pi` 单块已于 2026-10-19 建好并生效，`ssh -G pi` 落值正确；`~/.ssh/id_ed25519` 已存在且**无口令**；`ssh-agent` 服务 `Disabled`，保持不引入依赖；known_hosts 首次连接由 `accept-new` 静默落盘，键是**裸地址**（默认 22），一次落 ED25519/RSA/ECDSA 三条 | `[对端实测]`+`[本机实测]` |
-| 探测工具 / 串口现状 / 图形工具 | Git Bash `/dev/tcp` 可用、PowerShell 有 `Test-NetConnection`，都不依赖认证；本机已有 `COM3`/`COM19`/`COM22`，接 USB-TTL 后**新增的那个**才是目标口，不能凭号猜；**PuTTY 与 WinSCP 均未安装** ⇒ 串口救援路径依赖未决（第十一节） | `[本机实测]` |
+| 探测工具 / 串口现状 / 图形工具 | Git Bash `/dev/tcp` 可用、PowerShell 有 `Test-NetConnection`，都不依赖认证；本机现有四个口（`[本机实测]` 2026-10-19 两轮）：**三片同型号 WCH CH343**（`VID_1A86&PID_55D3`，三片 SN 按第八节次序名记作 `<SN-A>`=COM19、`<SN-B>`=COM22、`<SN-C>`=COM9；**SN 真值属设备指纹不入库**）＋ **JLink CDC UART** = `COM3`；占用测试：`COM19` 拒绝访问（正被别的程序占）、`COM3`/`COM22`/`COM9` 可打开可关闭。**第三片已接到板上并出 `login:`（COM9，见第八节）**。**PuTTY 与 `plink` 已装**（0.85，`winget install PuTTY.PuTTY`，2026-10-19），WinSCP 仍未装 ⇒ 串口救援**两端都已闭合** | `[本机实测]` |
 | mDNS | **可用**，前提是用对主机名：本板不是默认名 `raspberrypi`，`ping <主机名>.local` 通、`Resolve-DnsName` 给 A+AAAA。旧记录把「名字错」接成「mDNS 未验」的因果，已翻案；自动化仍写 IP（第三节取舍） | `[本机实测]` |
 | 对端首轮基线 | `Raspbian 13 (trixie)`、内核 `6.12.47+rpt-rpi-v7`、sshd `enabled`、服务端自报 `OpenSSH_10.0`（本端 `9.9p1`，跨大版本）；每条与 W7 本机服务端结论一致；`/var/log/auth.log` 读不到，认证记录只在 journald | `[对端实测]` |
 | 本机测试服务端 | WSL 内 `openssh-server` 只监听 `127.0.0.1:22002`，**测完已 `stop` + `disable`**；它能替 Pi 答「OpenSSH 语义」，不能答「这台设备的 shell/PATH/软件」 | `[本机实测]` |
@@ -101,7 +101,7 @@ Host pi
 | --- | --- |
 | 密钥装歪了但 sshd 回退到密码认证、人工把密码输对登进去 ⇒ **假通过**，agent 一跑就崩 | 有公钥 → rc=0 输出 `ok`；删掉 `authorized_keys` → rc=255、`Permission denied (publickey,password).`；去掉该选项只留非 tty stdin → 客户端回退密码并连吃两次 `Permission denied, please try again.`；`BatchMode yes` 单独也能挡回退——**两道独立的闸**，config 里都留着。判真只认第一种命令的输出，不认「能登进去」 |
 | 对端正例已复现 | `ssh -o PasswordAuthentication=no pi 'echo AUTH-OK; …'` → rc=0 且首行 `AUTH-OK`；反例不必在 Pi 上重造（本机已跑过正反两面，对端结果逐条一致） |
-| 硬约束 | **对端关闭密码登录必须晚于判真通过**，否则唯一退路是串口，而 PuTTY/plink 未装 |
+| 硬约束 | **对端关闭密码登录必须晚于判真通过**，否则唯一退路是串口。**这条 2026-10-19 已满足**：plink/PuTTY 已装 ＋ 串口线已通并出 `login:`（第八节）。**用户同日裁定：本板保持密码登录开启**，这一档不动；若要改，顺序仍是「串口在位 → 改 → 新会话验公钥」 |
 
 ### 对端首轮实录：钥「递上了」仍被拒，只有指纹能鉴别内容
 
@@ -154,11 +154,10 @@ Host pi
 
 | 事 | 做法 |
 | --- | --- |
-| 边界 | 接线、引脚、3.3V 电平、`cmdline.txt` 的 console 使能**全部归 Pi 侧稿**（接错会烧板）；电脑侧只管下面几张。一片空白 / 满屏乱码 / 只有回显无输出：多数根因在**对端接线**（TX/RX 未交叉、没共地、COM 号错、波特率不符），转 Pi 侧稿 |
-| 找到口 | 设备管理器 → 端口(COM 和 LPT)，用**插拔前后对照**认 USB-TTL 新增的那个（CH340/CP2102/FT232R 号段与本机已有口重叠时不可凭号猜）；驱动没装则根本不出现新条目，这先于任何终端参数 |
-| 参数固定 | `Serial line: COM<n>`、`Speed: 115200`、`Data bits: 8`、`Stop bits: 1`、`Parity: None`、**`Flow control: None`（自动流控会静默无输出）**；MobaXterm 的 `Session → Serial` 填同一组。`[待对端实测]`（参数组合来自旧稿，Pi 侧波特率不在本文掌控内） |
-| 工具依赖未决 | PuTTY 与 `plink` 均未安装；装 `plink` 才能让 agent 也走串口，但**串口是独占资源**，图形终端与 agent 会互抢（第十一节） |
-| 非 Windows 电脑附注 | `screen /dev/ttyUSB0 115200`（CH340/CP2102 常是 `ttyUSB*`，原生 UART 类是 `ttyACM*`），退出 `Ctrl+A` 再 `K`；`picocom` 亦可。与 Pi 是否在场无关，**不占实测清单** |
+| 边界 | 接线、引脚、3.3V 电平、`cmdline.txt` 的 console 使能**全部归 Pi 侧稿**（接错会烧板）；电脑侧只管下面几张。一片空白 / 满屏乱码 / 只有回显无输出：多数根因在**对端接线**（TX/RX 未交叉、没共地、COM 号错、波特率不符），转 Pi 侧稿。**但本板还有一条不是接线的乱码根因**：GPIO 上的控制台是 **mini-UART**（`[板上实测]` `ttyS0` → `3f215040.serial`），其波特率由 core 时钟推导，而 core 时钟现在是 `ondemand` 动态（实测 400 MHz 且会随负载变）→ 详见 `rpi-network.md`「串口控制台」的时钟一节。**这条风险目前未落地**：2026-10-19 空载实测 115200 收到**干净**的 `<主机名> login:`，无乱码；负载/降频下会不会漂仍未测 |
+| 找到口 | **认片不认号**：号会变，SN 不会。`Get-CimInstance Win32_PnPEntity \| Where-Object { $_.Name -match 'COM\d' }` 列出「设备名 (COMn)」，再取 `DeviceID` 里的 USB 序列号锁定那一片；本机三片同型号 CH343 就是靠 SN 分的，本仓按读出次序记作 `<SN-A>`=COM19、`<SN-B>`=COM22、`<SN-C>`=COM9（**SN 真值属设备指纹，不入库；跨天要重新对号就跑上面那条命令现读**）。判空闲：`New-Object System.IO.Ports.SerialPort COM<n>,115200,None,8,One` 后 `Open()`/`Close()`——**拒绝访问＝别的程序在用**，能开关＝空闲。设备管理器插拔对照仍可用，但同型号多片时它分不清是哪一片。**⚠️ 新片插上后若 `COM\d` 清单与错误设备清单（`ConfigManagerErrorCode -ne 0`）都不变，是物理层没通**（充电线没数据芯 / USB-C 模块缺 CC 下拉 / 口坏），**别去查驱动、别去查终端参数**——缺驱动至少会挂一个未知设备条目。这条 2026-10-19 踩过一次：换线换口才枚举出 COM9 |
+| 参数固定 | `Serial line: COM<n>`、`Speed: 115200`、`Data bits: 8`、`Stop bits: 1`、`Parity: None`、**`Flow control: None`（自动流控会静默无输出）**；MobaXterm 的 `Session → Serial` 填同一组。`[对端实测]` 2026-10-19：COM9 上这组参数**一次成功**，发一个 CR 即回 `<主机名> login:`，连发两次结果逐字节相同。⚠️ **那句提示里带主机名**——贴日志、截图或写进任何外发材料前先处理，口径见 [`docs/README.md`](../../README.md) 第五节，本仓一律写 `<主机名>` |
+| 工具依赖**已闭合**（2026-10-19） | `winget install PuTTY.PuTTY` 装上 PuTTY ＋ `plink`（0.85，路径 `C:\Program Files\PuTTY\`）——**装 PuTTY 就带 plink，不必单独装**。**agent 侧走串口一条命令**：`"/c/Program Files/PuTTY/plink.exe" -serial COM9 -sercfg 115200,8,n,1,N`（第 5 段 `N` 就是 Flow control None；口号按第八节「认片不认号」现查）。图形端 PuTTY → Session → Serial → 同一组参数。**独占不变**：plink 与 PuTTY 窗口互抢同一个 COM，谁先开谁用。非 Windows 电脑附注：`screen /dev/ttyUSB0 115200`（CH340/CP2102 常是 `ttyUSB*`，原生 UART 类是 `ttyACM*`），退出 `Ctrl+A` 再 `K`；`picocom` 亦可，与 Pi 是否在场无关、**不占实测清单** |
 
 ## 九、网页终端与远程桌面（消费侧）
 
@@ -192,26 +191,27 @@ Host pi
 | # | 项 | 状态 |
 | --- | --- | --- |
 | 1 | 新镜像默认账户与 SSH 是否预置 | **已裁决（官方文档，非实测）**：不预置 `pi`、用户名由 Imager/首启向导设定、SSH 默认禁用。对本文三点直接影响：`User` 必填、递钥**之前**必须先走对端使能（不存在「拿到 IP 就能 ssh」）、首连有没有密码可输取决于装机设定。本板已由 `[对端实测]` 2026-10-19 核完：Raspbian 13、`/home` 下无 `pi`、sshd `enabled`、boot 分区无 `ssh`/`userconf.txt`——落在「不预置 `pi`」一侧，判据在 `rpi-network.md`「首轮板上基线」 |
-| 2 | 串口是否引入 PuTTY/plink 依赖 | **未决**：本机未装；串口是独占资源，本仓单窗口后冲突面收敛到「用户自己是否同时插着终端」，属用户串行安排，不在本文决定。已裁决不再并列：`raspberrypi.local` vs 只用 IP 是**取舍**（自动化一律写 IP）；本机 mDNS **能**解析 `.local`（前提用对真名），但不改那条取舍 |
+| 2 | 串口是否引入 PuTTY/plink 依赖 | **已定（2026-10-19）**：装 PuTTY 即带 plink（`winget install PuTTY.PuTTY`），agent 可走串口，见第八节「工具依赖已闭合」。**独占冲突仍在**但收敛为「用户自己是否同时插着终端」，属用户串行安排，不在本文决定。已裁决不再并列：`raspberrypi.local` vs 只用 IP 是**取舍**（自动化一律写 IP）；本机 mDNS **能**解析 `.local`（前提用对真名），但不改那条取舍 |
 
 ## 相关文档
 
-- [`rpi-network.md`](./rpi-network.md) —— Pi 侧主干：镜像与账户基线、boot 分区配置、WiFi 与固定址、显示与无头、串口使能与接线、sshd、ttyd、VPN 出网。
-- [`rpi-status.md`](../hardware/rpi-status.md) —— 观测专章：接通之后读什么、怎么判、哪些读数属假（含非交互 PATH 缺 `/usr/sbin`）。
+- [`rpi-network.md`](./rpi-network.md) —— Pi 侧主干：镜像与账户基线、boot 分区配置、WiFi 与固定址、显示与无头、串口使能与接线、sshd、ttyd、VPN 出网。[`rpi-status.md`](../hardware/rpi-status.md) —— 观测专章：接通之后读什么、怎么判、哪些读数属假（含非交互 PATH 缺 `/usr/sbin`）。
 - [`rpi-gpio-pinout.md`](../gpio/rpi-gpio-pinout.md) —— 40 针表与电气参数；串口三根线的接线归它和 Pi 侧稿，本文只管电脑侧终端参数。另见 [`rpi-3b-hardware.md`](../hardware/rpi-3b-hardware.md)（SoC 规格与欠压实录）、[`docs/README.md`](../../README.md)（索引层）。
 
 ## 未覆盖事项
 
 | # | 事项 |
 | --- | --- |
-| 1 | **接入已通**：`ssh pi '<cmd>'` 免密可用；**密码登录目前仍开着**（递钥与定因都靠它兜底），关不关由用户决定，关之前按第五节硬约束先有一条能改回来的通道（本板当前是 HDMI 直连，`plink`/PuTTY 未装）。 |
-| 2 | 仍 `[待对端实测]`（都是设备属性，本机服务端替不了）：sshd 权限严格模式是否静默拒钥（考法要换成「故意把 `~/.ssh` 改成组可写」，属破坏性测试，做前先确认板上没接负载）、串口插拔认口与终端参数、rsync 的**真实传输**（工具在不在已验：在）。 |
-| 3 | 十步清单只剩两步：rsync 真实传输、串口认口与参数（后者要 USB-TTL 线在场）。原载体 `.ai/contexts/qoder-b.md` 已随多窗口约定删除，可查 `git show 43964f0:.ai/contexts/qoder-b.md`；剩余两项按本篇正文现写命令，不要回去找那个文件。 |
-| 4 | 工具缺口待决：PuTTY 或 `plink`（串口救援依赖，未装）、WinSCP（可选图形）。本机 SSH 服务端已落地并停用，复现命令见第一节。 |
-| 5 | 「多个 agent 远程执行」这一使用形态本身尚未确认，第六、七节的并发小节以它为前提。本文未覆盖硬件形态、Pi 侧配置、业务形态。 |
+| 1 | **接入已通**：`ssh pi '<cmd>'` 免密可用；**密码登录仍开着——2026-10-19 用户裁定保持开启**（递钥与定因都靠它兜底）。**兜底两条一真一假**：关屏 ② 之后屏上是纯黑（`vtcon` 只剩 dummy），**HDMI 直连这条兜底实际不可用**；**物理串口已通并出 `login:`（COM9，第八节 `[对端实测]`）**，所以真要关密码登录，硬约束已满足——但**串口是唯一非网络通道**，动 `cmdline.txt`/sshd 前先确认可从串口改回来，那三根线不能随手拔。 |
+| 2 | 十步清单**只剩一项**属 `[待对端实测]`：**rsync 的真实传输语义**（工具在不在已验：在）。**串口认口与终端参数已于 2026-10-19 验完**（COM9 出 `login:`，第八节）。另有一条破坏性的待排：sshd 权限严格模式是否静默拒钥（考法要换成「故意把 `~/.ssh` 改成组可写」，做前先确认板上没接负载）。原载体 `.ai/contexts/qoder-b.md` 已随多窗口约定删除，可查 `git show 43964f0:.ai/contexts/qoder-b.md`；剩余项按本篇正文现写命令，不要回去找那个文件。 |
+| 3 | 工具缺口：**PuTTY/plink 已于 2026-10-19 装上**（`winget install PuTTY.PuTTY`，0.85，安装器要管理员权限并会弹 UAC）；WinSCP 仍未装（可选图形，不阻塞）。本机 SSH 服务端已落地并停用，复现命令见第一节。 |
+| 4 | 「多个 agent 远程执行」这一使用形态本身尚未确认，第六、七节的并发小节以它为前提。本文未覆盖硬件形态、Pi 侧配置、业务形态。 |
 
 ## 变更记录
 
+- 2026-10-19（建串口，电脑侧工具缺口闭合）：`winget install PuTTY.PuTTY` 装上 PuTTY ＋ **plink 0.85**（第八节「工具依赖未决」→「已闭合」，并给出 agent 侧一条命令 `plink -serial COM22 -sercfg 115200,8,n,1,N`）；第一/八节的本机串口现状换成实测明细——两片同型号 CH343 靠 **USB SN** 区分（`<SN-A>`=COM19 正被占用、`<SN-B>`=COM22 空闲）、JLink CDC=COM3，并新增「认片不认号」与端口占用的一条 PowerShell 判据。第十一节 #1 同步**兜底现状已变**：② 之后 HDMI 不可用，串口线接通之前不要关 SSH 密码登录。
+- 2026-10-19（同日第三轮，两项裁定落地）：① 三片 CH343 的 **USB 序列号真值改为 `<SN-A>`/`<SN-B>`/`<SN-C>` 次序名**（用户裁定属设备指纹、不入库），第一节与第八节各补一句「真值现查 `Win32_PnPEntity` 的 `DeviceID`」，口径立在 [`docs/README.md`](../../README.md) 第五节，VID/PID 属芯片型号保留；② **SSH 密码登录裁定为保持开启**，第五节硬约束与未覆盖事项 #1 从「等点头」改成「已裁定不动，改的话顺序仍是串口在位→改→新会话验公钥」。
+- 2026-10-19（同日第二轮，串口接通）：第三片 CH343（`<SN-C>`）插到板上针 8/10/6 后 **COM9 出干净的 `<主机名> login:`**，第八节「参数固定」由 `[待对端实测]` 升 `[对端实测]`、「工具依赖」示例改指 COM9；第一节盘点补第三片与「两端都已闭合」。新增两条判据：新片插上**清单不变＝物理层没通**（先查线与口，别查驱动），以及**串口回显带主机名**、外发前按索引层第五节处理。第五节硬约束与第十一节 #1/#2 随之改口径：**关 SSH 密码登录的前置条件现已成立**。
 - 2026-10-19（查表化）：第一节 16 行并成 11 行、第三节档位段收进表、第六节 pty/tmux 细则收进表、第五节「首轮实录」改成四条结论行、未覆盖事项改成表；复盘与因果链移入 `.ai/timeline.md`。**章号与章名（一~十一）未动**，config 块、主机键指纹基准、判真命令、PATH 四行对比逐字保留。
 - 2026-10-19（分目录／新增观测专章／v11 结构整理）：由 `docs/pi/` 根移入 `docs/pi/access/`，路径链接改 `../<分类>/` 与 `../../README.md`；`rpi-status.md` 成文后直接取用本篇的非交互 PATH 结论，并把「连不上」的判定交回本篇第十节；接入索引层——证据四条定义与敏感规则上收，只留本篇端别口径，新增 `## 本篇结构`，「十二、状态」更名 `## 未覆盖事项` 并补 `## 相关文档`。章号与散文式引用未动。
 - 2026-10-19 v10（同日续测）：PATH 四行对照、登录 shell `/bin/bash`、软件在否（`tmux` 未装）、`scp -r` 落地归属、免密 `sudo`；**翻两条旧账**——mDNS 可用（错的是主机名不是解析）、`command -v iw` 空是 PATH 不是没装。
