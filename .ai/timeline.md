@@ -1,5 +1,21 @@
 # 任务时间线
 
+## 2026-10-19（不可达根因裁定 + 串口自动登录打通）— 三个候选全被推翻，时长另有来源
+
+- 根因（`[板上实测]` 18:30，日志经**串口自动登录**取得）：`17:22:20` `CTRL-EVENT-DISCONNECTED ... reason=15` → `4-Way Handshake failed` → `SSID-TEMP-DISABLED ... WRONG_KEY` → NM `activated -> need-auth` → `<warn> no secrets: No agents were available for this request.` → `need-auth -> failed (reason 'no-secrets')` → `disconnected`，此后 **68 分钟零重试**（`-u NetworkManager --since/--until | wc -l` = 1）。矛盾点：`connection.autoconnect: yes` 且 `802-11-wireless-security.psk-flags: 0 (none)`（口令在 keyfile 里），仍去问 agent 并因无人应答而放弃 → **切无头（②）之后没有能应答的 secret agent**，一次 4-Way 失败就能把连接永久晾下。
+- 口径改判：本 boot 段（14:39→18:30）去关联 **30 次**（`reason=3`×13／`reason=6`×15／`reason=15`×2，间隔 4–10 分钟）是**常态且多数秒级自愈**。所以「省电／欠压／信道」这三个候选解释的是**频次**，没有一个解释**时长**；时长来源是 NM 的停摆状态。此前「三个候选、省电是唯一正向嫌疑」的说法按此收窄，不是被证伪而是**问错了层**。
+- 决策（恢复不动配置）：`nmcli connection up "netplan-wlan0-<SSID>"` 用 keyfile 里已存口令，8 秒恢复、地址不变、SSH 通；这条命令成功＝链路无问题、只是 NM 放弃了，**失败并再报 `no secrets`** 才是口令真错。
+- 新通道（PC 侧工具，不入库）：串口自动登录脚本放在本机 TEMP，凭据从 `%USERPROFILE%\.pi-serial-secret` 读（第 1 行账户、第 2 行口令，用户自建于 PC 侧）；状态机按 `login:`／`assword` 应答、到 shell 提示符才发命令、用 `echo PI''END` 的**裸行**当完成标记（typed 行里带引号不会被误判）。第 0 步由此从「只看提示符」升级为「不可达期间能进系统取日志并恢复」。
+- 两个自找的假读数（都记进文档）：① `journalctl -g "<pattern>"` 会把**执行该查询的 sudo 审计行**一起匹配（命令文本自带 pattern）→ `reason=15` 报 3 实际 2、`Activation: failed` 多出的那条时间戳正是我发起恢复的那一秒；计数一律 `-u <unit>`。② 原文 `No agents were available` 首字母大写，`grep "no agents"` 数出 0，看着像「从没发生过」；`-i` 才是 2。
+- 决策（脚本相位坑）：第一版在空 `$out` 时就把命令发出去，被 `login:` 当用户名吃掉一次（`Login incorrect`）→ 改为**先探测 shell 提示符再发命令**，不在提示符就只发 CR。
+- 调查（3 查＝用户裁定要查，已查完；**未做任何板子配置改动**）：`psk=` 确实在 keyfile 里（`/run/NetworkManager/system-connections/netplan-wlan0-<SSID>.nmconnection`，开机 14:39:22 生成；`/etc/netplan/90-NM-<uuid>.yaml` 里也有 `psk`）→ 不是「没存口令」，是 NM 在 4-Way 失败后把已存口令**判为坏**、进 need-auth 问 agent。恢复那刻的 `agent-manager: agent[…,:1.190/nmcli-connect/1000]: agent registered` 补上了最后一环：**`nmcli connection up` 之所以能过，是 nmcli 自带临时 agent 应答；自动重连路径没有 agent**。所以修法只有三条轴：常驻一个能应答的 agent、绕开应答（看门狗直接重连）、减少 4-Way 失败本身。
+- 命令口径两条（本板实测）：`nmcli agent` 的动词只有 `secret｜polkit｜all`，**`nmcli agent status` 不存在**；`loginctl get-linger` 报 `Unknown command verb`，查 linger 用 `loginctl show-user <用户> --property=Linger`——而该命令本板**输出为空**（`list-sessions` 正常），linger 真值仍未读到，属未覆盖。`user@1000.service` = `static`＝最后一个会话关掉即停 → 「常驻 agent」必须先解决会话生命周期，这条是**推断**（依据 `static`＋会话表），未实测。
+- 决策（省电这一档）：用户裁定**不关**。与本条根因一致——它至多影响去关联频次，买不到恢复；`Power save: on` 读数保留。
+- 待用户裁定（三档修法，按代价排）：① 只保留现在这条——不可达时用串口/SSH 手敲 `nmcli connection up`（零改动，但要人在）；② 加看门狗 timer（系统级、不依赖会话，检测到 `wlan0:disconnected` 且 SSID 可见就重连）；③ 常驻 secret agent（要 `nmcli agent secret` 跑在 user@1000 里＋解决 linger，链条最长、语义最正）。**均未在板上验证过可行性，动哪档由用户点。**
+
+- 复盘（我自己写进历史的泄漏）：`bee8c93` 那条「复验四件套」把**主机名字面值写进了脱敏清单本身**（那一行把被扫的字面值连扫描模式一起写了进去）——扫描模式里带着被扫的东西，等于自己盖掉自己的规则。工作区已改为 `<主机名>`；**教训：脱敏清单／判据脚本一律只写类别名，不写字面值**（同类坑此前在串口提示符回显上踩过一次）。
+- 口径（证据档位）：本轮全部结论是 `[板上实测]`，取证通道是**串口自动登录**而非 SSH——这是本仓第一次在「SSH 完全不可达」期间拿到板侧日志，`rpi-network.md` 排障第 0 步因此从「只看提示符」升级为「可进系统」。
+
 ## 2026-10-19（不可达第 4 次·串口当第 0 步用）— 故障第一次被现场定层；同时踩到自己引入的全量 CRLF
 
 - 现象（`[对端实测]`，17:41–17:51）：SSH 与 ICMP 同时全失败，本地循环 22 次 × 12 秒一次没通，**至少 10 分钟未自愈**——比旧记录的「约 40 秒」长一个量级。→ **判据改口：不能按「等一下它就回来」安排工作**，这条直接影响后面要不要为等恢复而挂起其它任务。
