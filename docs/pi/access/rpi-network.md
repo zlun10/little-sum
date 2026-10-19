@@ -342,7 +342,25 @@ systemctl get-default                        # 下次开机进哪个目标
 - `vc4-kms-v3d` 与 `/dev/dri/card0` 属驱动层，注释 overlay 才是真无 DRM，但会连带 `camera_auto_detect=1` 失效，且**注释后 boot 早期能否出图本板未验**（`[待验证]`）。`gpu_mem=76M` 在 KMS 下的最小允许值同样 `[待验证]`。
 - **关屏的前置条件本板已满足**：`/dev/serial0 -> ttyS0`（mini UART，`config.txt` 有 `enable_uart=1`），`serial-getty@ttyS0.service` 为 **active**（`enabled-runtime`）。关掉图形控制台后串口仍是登录入口。
 - **一条不可自动恢复的代价**：远程看画面靠 `wayvnc.service` + `wayvnc-control.service`（后者 `BindsTo=wayvnc.service`），随顶层一起消失。SSH 与 ttyd 不受影响。
-- **四个档位按代价递增，本板停在第几档由用户定点（均未执行）**：① `sudo systemctl set-default multi-user.target`（可逆，免重启生效用 `isolate`），省约 249 MB；② 在 ① 之上 `sudo systemctl disable getty@tty1`，并把 `cmdline.txt` 的 `console=tty1`、`quiet splash`、`plymouth.ignore-serial-consoles` 删掉只留 `console=serial0,115200`——省不了内存，买到「所有输出只从串口走」这条确定性；③ 注释 `dtoverlay=vc4-kms-v3d` 与 `max_framebuffers=2`，真无 DRM 与 HDMI 输出，代价是 `camera_auto_detect` 失效、且要重启才生效（改坏时**串口就是唯一救援入口**，所以 ② 必须排在 ③ 前面做）；④ 只在走完 ③ 之后才谈 `gpu_mem` 下调。①② 属系统层、可当场回退，③④ 属固件层。
+- **四个档位按代价递增，本板停在第几档由用户定点**：① `sudo systemctl set-default multi-user.target`（可逆，免重启生效用 `isolate`）——**2026-10-19 已由用户选定并执行，见下面的执行实录**；② 在 ① 之上 `sudo systemctl disable getty@tty1`，并把 `cmdline.txt` 的 `console=tty1`、`quiet splash`、`plymouth.ignore-serial-consoles` 删掉只留串口那一条 console——省不了内存，买到「所有输出只从串口走」这条确定性；③ 注释 `dtoverlay=vc4-kms-v3d` 与 `max_framebuffers=2`，真无 DRM 与 HDMI 输出，代价是 `camera_auto_detect` 失效、且要重启才生效（改坏时**串口就是唯一救援入口**，所以 ② 必须排在 ③ 前面做）；④ 只在走完 ③ 之后才谈 `gpu_mem` 下调。①② 属系统层、可当场回退，③④ 属固件层。
+
+### ① 的执行实录：省到的不是 249 MB，是 50 MB（`[板上实测]` 2026-10-19，经 SSH 执行）
+
+用户选定只走 ①，不碰 boot 分区。两条命令：`sudo systemctl set-default multi-user.target`（`default.target` 符号链接改为 `multi-user.target`）＋ `sudo systemctl isolate multi-user.target`（当场生效，**没有重启**——这块板欠压未修，重启要另找时机）。
+
+| 项 | 执行前 | 执行后 |
+|---|---|---|
+| `systemctl get-default` | `graphical.target` | `multi-user.target` |
+| `systemctl is-active lightdm graphical.target` | `active` / `active` | **`inactive` / `inactive`** |
+| `free -m` used | 244 | **194**（available 676 → 726） |
+| `labwc` / `wayvnc` / `lightdm` 进程 | 桌面链在 | `pgrep` 全空 |
+| `ssh` / `serial-getty@ttyS0` | active | **仍 active**（SSH 会话没被 isolate 打断，串口入口没动） |
+
+- **为什么只有 50 MB 而不是 249 MB**：上面那次 249 MB 的量是**自动登录桌面会话全开时**的数（labwc + panel + pcmanfm + portal + wayvnc 一整串）。本轮执行前 `systemctl is-active wayvnc wayvnc-control` 已经是 **`inactive`**、HDMI 的 `/sys/class/drm/card0-*/status` 是 `disconnected`，也就是桌面链本来就没跑满；① 关掉的是 `lightdm` 那一层，拿到的就是那一层的量。**教训：省多少要先看当下谁在跑，不能引用上一次满桌面时的数。**
+- **剩下的三笔省不到，而且不该省**：`wireplumber` 23 MB、`xdg-desktop-portal` 15.6 MB、`rpi-connectd` 11.9 MB 仍在，`cut -d: -f3 /proc/<pid>/cgroup` 显示它们全挂在 `/user.slice/user-1000.slice/user@1000.service/…`——**是这次 SSH 登录自身拉起的 user session**，与 `graphical.target` 无关。要清它们得 mask user units，代价是音频与 portal 没，且下次图形登录还得改回，不划算。→ **判据：`ps` 里的残留要先认 cgroup 再决定关不关，别一律当桌面残留。**
+- **一条要纠正的正文写法**：本节 ② 原来写「只留 `console=serial0,115200`」，本板 `/proc/cmdline` 实际是 **`console=ttyS0,115200 console=tty1`**（不是 `serial0`），另带 `quiet splash`、`plymouth.ignore-serial-consoles` 和 `cfg80211.ieee80211_regdom=CN`（国家码已由 raspi-config 写进内核命令行，WiFi 那节的 `[待验证]` 在此有落点）。真要做 ② 时按 **`ttyS0`** 这个实际字符串改，别照抄 `serial0`。
+- **回退（一条命令，不需要重启）**：`sudo systemctl set-default graphical.target && sudo systemctl isolate graphical.target`。**重启后的持久性未验**（`get-default` 已经落在 `multi-user.target`，符号链接本身就是下次开机的依据，但本板欠压未修，这次没专门重启复验）。
+- `getty@tty1` 仍 `enabled` 且 `active`——那是 ② 的范围，本轮按用户定点没动。
 
 ### 显示侧验证
 

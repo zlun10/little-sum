@@ -89,7 +89,7 @@ A：按「常驻还是临时、要不要事件、要不要微秒级」选，速�
 ## 五、无头与显示
 
 **Q：想把屏幕那份资源去掉、只用串口，怎么办？**
-A：改顶层一个开关就够——`sudo systemctl set-default multi-user.target`，下面的 `lightdm → labwc → wayvnc` 依赖链一起塌，省约 249 MB。四档方案与代价见 `rpi-network.md`「显示输出与无头模式」。
+A：改顶层一个开关就够——`sudo systemctl set-default multi-user.target` ＋ `sudo systemctl isolate multi-user.target`（后者当场生效，不用重启），下面的 `lightdm → labwc` 依赖链一起塌。**本板 2026-10-19 已执行，实测省 50 MB（used 244 → 194）**，不是旧记录那个 249 MB——249 是自动登录桌面会话全开时的数，本轮 wayvnc 本来就 `inactive`。四档方案与执行实录见 `rpi-network.md`「显示输出与无头模式」。
 
 **Q：关屏之前必须先确认什么？**
 A：串口 getty 在跑（本板 `serial-getty@ttyS0` = `active`），否则关掉唯一控制台就没有控制台。详见 `rpi-status.md` 第七节。
@@ -102,6 +102,9 @@ A：那才是真无 DRM，但 `camera_auto_detect=1` 连带失效、boot 早期�
 
 **Q：`gpu_mem` 能降到多少？**
 A：KMS 开着时的最小允许值 `[待验证]`，本仓不编数；且只在注释掉 KMS 之后才谈降它。
+
+**Q：切到 multi-user 之后 `ps` 里还有 portal 和 wireplumber，是不是没关干净？**
+A：不是。`cut -d: -f3 /proc/<pid>/cgroup` 显示它们挂在 `/user.slice/user-1000.slice/user@1000.service/…`，是**这次 SSH 登录自己拉起的 user session**，与 `graphical.target` 无关；要清得 mask user units，代价是音频和 portal 没。→ 判据：残留先看 cgroup 再决定关不关，别一律当桌面残留。
 
 **Q：欠压会让 GPIO 一起出问题吗？**
 A：会混淆判断，所以硬规则是 `get_throttled` 非 `0x0` 就不接 GPIO 外设、不跑写 SD 的负载。详见 `rpi-status.md` 第三节。
