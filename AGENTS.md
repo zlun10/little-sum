@@ -12,8 +12,9 @@
 
 ## 项目现状与实现
 
-- 当前仓库处于初始化阶段，仅有 `little-sum.code-workspace`、AI 协作入口和 `scripts/check-agents.sh`，尚未确定业务技术栈、构建或测试命令。
-- 并行约定校验入口：`sh scripts/check-agents.sh`，退出码非 0 表示违反本文件「并行 Agent」断言。
+- 当前仓库处于文档期：产出是 `docs/pi/<分类>/` 下的树莓派 3B 参考文档（分类目录与跳转索引见 `docs/README.md`，仓库根 `README.md` 只留入口），另有工作区文件、AI 协作入口和 `scripts/check-agents.sh`；尚未引入业务代码，没有构建与测试命令。
+- 约定校验入口：`sh scripts/check-agents.sh`，退出码非 0 表示违反本文件的文档落点断言（根目录入口文件、`.ai/` 内容、废弃目录不得重建）。
+- 硬件与固定端口（串口、调试探针、OpenOCD/gdb 端口）不设并行约定，占用冲突由用户串行安排。
 - 项目说明、运行方式与验证入口在引入实际代码后维护于 `README.md`，不虚构未存在的命令或能力。
 - 遵循现有代码组织和风格，保持职责清晰；优先复用语义匹配的实现，不为未知需求增加抽象。
 - 修改接口时检查调用方、边界和失败行为；不顺带进行无关重构或全量格式化。
@@ -21,34 +22,13 @@
 
 ## 任务上下文
 
+- 本仓由**单一工作窗口**推进（2026-10-19 起，多窗口并行约定已退役）：不加 worktree、不建平行分支，历史依据只靠 `.ai/` 与 git 记录回溯。
 - 跨会话共享记录放 `.ai/`；会话或工具私有笔记留在各自本地目录。
-- `.ai/current.md` 仅保留当前现状与未完成事项，一份，由主 worktree 的单写者覆盖更新，linked worktree 内不得修改（见「并行 Agent」）。
+- `.ai/current.md` 只保留当前现状与未完成事项，一份，覆盖更新。
 - `.ai/timeline.md` 保留跨任务决策与历史结论，只加不减，新条目在上，包含 `决策：`。
-- `.ai/contexts/<窗口标识>.md` 是窗口的长期记录，头部保留列表项字段 `owner:`、`date:`、`branch:`、`base:`（基线提交），正文按任务分节，不另加状态字段。
-- 接续任务先读 `current.md` 和 `timeline.md` 最近条目，按需读 `contexts/`，核对分支、提交和工作区；记录仅供参考，不自动执行历史待办。
-- 任务收尾时，将决策与根因写入 `timeline.md`，未完成事项交主 worktree 单写者写入 `current.md`，再把该任务在本窗口 context 中的过程细节压缩为结论小节；不保留聊天流水账，也不删窗口 context 或分支。
-
-## 并行 Agent
-
-- 分配单位是 agent 窗口，不是任务：一个窗口长期占一个 worktree 和一个分支，窗口内换任务不重建 worktree。
-- 窗口标识为小写字母、数字和短横线，不含 `/`，如 `qoder-a`、`minimax-1`。分支名 = 窗口标识 = `.ai/contexts/<窗口标识>.md`，worktree 目录固定为 `../<窗口标识>-worktree`，四者由同一标识派生。
-- 建立：`git worktree add "../<窗口标识>-worktree" -b <窗口标识>`，从 `main` 最新提交建立，否则该工作树内没有本约定与校验脚本。
-- 主 worktree 只归编排会话使用，负责 `current.md` 归并、各窗口分支合并与提交。
-- 编排会话的标识固定为 `main`：分支为 `main`，窗口 context 为 `.ai/contexts/main.md`；派生规则中「目录 = `../<窗口标识>-worktree`」对它例外，就是主 worktree 本身。
-- 编排会话可代 worker 提交其 worktree 内未跟踪的 `.ai/contexts/<窗口标识>.md`：只在所属 worktree 内按明确路径 `git add` 后提交，不改写文件内容，不处理他人已跟踪的改动。理由是该文件若先由 `main` 建为同名跟踪文件，worker 的 `git merge main` 会被 git 拒绝，窗口卡死。
-- 用户说「同步所有 tree」时，在主 worktree 执行 `sh scripts/sync-agents.sh`，固定两步：先收——代提交各窗口未跟踪的 `.ai/contexts/<分支>.md`，再把各分支已提交内容 merge 进 `main`（冲突则 `git merge --abort`，`main` 不变）；后放——对每个窗口 `git merge --ff-only main`。他人的其他未提交改动只报 WARN 不代处置；`main` 工作区不干净时脚本退出码 2，不做任何合并。
-- 编排会话的结论只写 `.ai/current.md` 与 `.ai/timeline.md`，不改他人 worktree 内的 context 内容；反向传递靠窗口 `git merge main`，同机共享对象库，无需 fetch 或 push。
-- 跨文件的一致性活（合稿、去重、分歧择一）由编排会话在 `main` 做，`docs/` 默认归它改——只有 main 同时看得见全部文档；派给窗口的活限于两类：实机验证（需要设备在场，产出实测清单与结论）和专章撰写（只写自己那一篇）。
-- 窗口动 `docs/` 下的文件前，在本窗口 `.ai/contexts/<窗口标识>.md` 写一行认领 `- 正在改：docs/pi/<文件名>.md`，同一时间只认领一个文件，收尾时删掉该行；两个窗口认领同一文件时 `scripts/check-agents.sh` 报 FAIL。
-- 派单走仓库信箱：编排会话在 `main` 写 `.ai/dispatch/<窗口标识>.md`，头部保留 `- target:` 与 `- mode:`，正文含开工第一步（`git merge main` → 写认领行 → 跑校验）。worker 接到「开工/继续」这类最小指令时，第一个动作就是读自己那份 dispatch 并照做——这对没有编程消息通道的工具窗口（MiniMax 侧）是唯一可控的派单入口。交付方式：worker 把结论写进自身 context、删掉认领行，并 `git rm .ai/dispatch/<窗口标识>.md` 一起提交；**该文件还在，就等于未交付**，编排会话据此判断回收范围。
-- `scripts/check-agents.sh` 第 9 条断言机检派单：`.ai/dispatch/*.md` 的文件名必须有同名 `.ai/contexts/<标识>.md`（防孤儿派单），且其 `target:` 不得与别的窗口的认领行冲突。
-- 窗口每次开始新任务前先 `git merge main`，保持约定与校验脚本最新。
-- 一个窗口同一时间只推进一个任务；不得用 `git stash`、`git checkout -- .`、`git reset --hard`、`git clean -fd` 处置其他窗口的改动。
-- 关闭窗口时才清理：确认任务已合入 `main` 后执行 `git worktree remove "../<窗口标识>-worktree"` 与 `git branch -d <窗口标识>`。
-- 约定生效前已存在的 worktree 由所属窗口自行迁移：先 `git branch -m <旧分支> <窗口标识>` 去斜杠，再 `git worktree move <旧目录> "../<窗口标识>-worktree"`；迁移前校验脚本持续报 FAIL，编排会话不代改。
-- `.ai/timeline.md` 合并冲突时保留双方条目并按日期倒序，不删他人结论。
-- 写入共享文件（`.ai/current.md`、`.ai/timeline.md`、各工具的共享记忆索引）前先重读当前内容，只增量修改，不整篇覆盖、不删除其他 agent 的条目。
-- 硬件与固定端口（串口、调试探针、OpenOCD/gdb 端口）不在本节约定范围，占用冲突由用户串行安排。
+- 写入 `.ai/timeline.md` 与各工具的共享记忆索引前先重读当前内容，只增量追加、不删除既有条目；`.ai/current.md` 由本窗口整篇重写，只保留仍然成立的现状与待办。
+- 接续任务先读 `current.md` 与 `timeline.md` 最近条目，核对分支、提交和工作区；记录仅供参考，不自动执行历史待办。
+- 任务收尾时，决策与根因写入 `timeline.md`，未完成事项写入 `current.md`，过程细节不留流水账。
 
 ## Git 与验证
 

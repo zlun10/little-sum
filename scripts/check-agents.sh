@@ -1,205 +1,185 @@
 #!/bin/sh
-# 校验 AGENTS.md「并行 Agent」断言，违规退出码 1。
-#   1 每个 linked worktree：分支名只含小写字母/数字/短横线，且目录名 = <分支名>-worktree
-#   2 linked worktree 内不得修改 .ai/current.md
-#   3 每份 .ai/contexts/*.md 头部含 owner/date/branch/base 字段
-#   4 不存在游离的 .ai/current-*.md
-#   5 linked worktree 的当前分支有同名 context 文件
-#   6 .ai/contexts 下不得分层存放
-#   7 文档落点：仓库根只留四个入口文件，.ai/ 只留 current.md 与 timeline.md
-#   8 文档认领：context 里的「正在改：<路径>」不得被两个窗口同时声明
-#   9 派单信箱：.ai/dispatch/<标识>.md 须有同名 context，target 不得与别窗认领冲突
-# 主 worktree 运行时另列出各 linked worktree 中尚未归并的 context 文件（INFO，不判违规）。
+# 校验 AGENTS.md 的文档落点断言 + docs/README.md 的写作结构规范，违规退出码 1。
+#   落点
+#     1 仓库根只留四个入口文件：README.md AGENTS.md CLAUDE.md QODER.md
+#     2 .ai/ 只留 current.md 与 timeline.md，且不存在游离的 .ai/current-*.md
+#     3 派单信箱已废：.ai/dispatch/ 若重新出现即违规
+#     3.5 分类目录：docs/pi/ 根下不得直接放 .md（必须进 hardware/gpio/access）、
+#         分类目录不得为空、docs/ 下除 README.md 与 pi/ 之外不放东西
+#   结构（docs/pi/<分类>/ 下每篇）
+#     4 代码围栏 ``` 成对（后续断言靠它切正文）
+#     5 正文级标题（H1）恰好一个
+#     6 篇首 blockquote 里有 `> 用途：` 与 `> 边界：` 各一行
+#     7 `## 本篇结构` 存在，条目数 = 该篇 `##` 章数 - 1，且每条都能对一个真实章名
+#     8 尾块名目与顺序：相关文档 → 参考 → 未覆盖事项 → 变更记录（最后者必须存在且固定最末）；
+#       旧名目（修订记录 / 状态 / 与其他文档的分工）不得再出现
+#     9 markdown 相对链接的目标文件存在——只取正文（跳过代码围栏与行内代码），
+#       散文里用行内代码写出的 `](./x.md)` 形态属示例，不算引用；已删除的历史源稿不写成链接
+#    10 索引层 docs/README.md 存在，且每篇都在里面被命名（名单由文件系统推导，加新篇不改脚本）
 set -u
 
 fail=0
 report() {
   printf '%-5s %s\n' "$1" "$2"
   if [ "$1" = FAIL ]; then fail=1; fi
-  return 0
 }
 
-branch=$(git rev-parse --abbrev-ref HEAD)
-# linked worktree 的 gitdir 形如 <main>/.git/worktrees/<id>；本机 porcelain 不输出 gitdir 行，由此推导主工作树。
-gd=$(git rev-parse --absolute-git-dir)
-case "$gd" in
-  */worktrees/*) linked=1; common=${gd%/worktrees/*} ;;
-  *) linked=0; common=$gd ;;
-esac
-main_root=$(dirname "$common")
-
-tmp_paths=$(mktemp) || exit 2
-tmp_pairs=$(mktemp) || exit 2
-tmp_ctx=$(mktemp) || exit 2
-trap 'rm -f "$tmp_paths" "$tmp_pairs" "$tmp_ctx"' EXIT HUP INT TERM
-
-git worktree list --porcelain | sed -n 's|^worktree ||p' | grep -Fxv "$main_root" > "$tmp_paths" || :
-
-# 逐块配对 worktree 与其 branch；游离 HEAD 时分支列为空。
-git worktree list --porcelain | awk -v m="$main_root" '
-  /^worktree / {
-    if (p != "" && p != m) print p "\t" b
-    p = substr($0, 10)
-    b = ""
-  }
-  /^branch / { b = substr($0, 8); sub(/^refs\/heads\//, "", b) }
-  END { if (p != "" && p != m) print p "\t" b }
-' > "$tmp_pairs"
-
-while IFS= read -r line; do
-  if [ -z "$line" ]; then continue; fi
-  p=$(printf '%s' "$line" | cut -f1)
-  b=$(printf '%s' "$line" | cut -f2)
-  name=$(basename "$p")
-  if [ -z "$b" ]; then
-    report FAIL "无法取得分支名（游离 HEAD）: $p"
-    continue
-  fi
-  if ! printf '%s' "$b" | grep -Eq '^[a-z0-9][a-z0-9-]*$'; then
-    report FAIL "窗口标识非法（小写字母/数字/短横线，不含 /）: 分支 $b"
-    continue
-  fi
-  if [ "$name" = "$b-worktree" ]; then
-    report PASS "窗口 $b 目录与分支一致"
-  else
-    report FAIL "worktree 目录应为 ../$b-worktree，实际为 $name"
-  fi
-done < "$tmp_pairs"
-
-if [ "$linked" = 1 ]; then
-  if git diff --quiet HEAD -- .ai/current.md && git diff --cached --quiet HEAD -- .ai/current.md; then
-    report PASS "linked worktree 未改 current.md"
-  else
-    report FAIL "linked worktree 修改了 .ai/current.md，单写者约定被破坏"
-  fi
-  if [ "$branch" != main ] && [ "$branch" != HEAD ]; then
-    if [ -f ".ai/contexts/$branch.md" ]; then
-      report PASS "context 对应窗口 $branch"
-    else
-      report FAIL "缺 .ai/contexts/$branch.md"
-    fi
-  fi
-fi
-
-if [ -d .ai/contexts ]; then
-  find .ai/contexts -maxdepth 1 -name '*.md' > "$tmp_ctx"
-  while IFS= read -r f; do
-    missing=
-    for key in owner date branch base; do
-      head -n 15 "$f" | grep -Eq "^-*[[:space:]]*${key}:" || missing="$missing $key"
-    done
-    if [ -z "$missing" ]; then
-      report PASS "头部字段齐全 $f"
-    else
-      report FAIL "头部缺字段$missing: $f"
-    fi
-  done < "$tmp_ctx"
-  nested=$(find .ai/contexts -mindepth 2 -name '*.md' -print)
-  if [ -n "$nested" ]; then
-    report FAIL "context 分层存放，窗口标识不含 /: $(printf '%s' "$nested" | tr '\n' ' ')"
-  fi
-else
-  printf 'INFO  无 .ai/contexts 目录\n'
-fi
-
-for f in .ai/current-*.md; do
-  if [ -e "$f" ]; then report FAIL "游离文件 $f"; fi
-done
-
+# ---------- 1 仓库根落点 ----------
 root_ok=" README.md AGENTS.md CLAUDE.md QODER.md "
 for f in *.md; do
-  if [ ! -f "$f" ]; then continue; fi
+  [ -f "$f" ] || continue
   if [ "${root_ok#* $f }" = "$root_ok" ]; then
     report FAIL "仓库根不应放文档: $f（落点见 README.md，文档归 docs/）"
   fi
 done
+
+# ---------- 2/3 .ai/ 落点 ----------
 for f in .ai/*.md; do
-  if [ ! -f "$f" ]; then continue; fi
-  b=$(basename "$f")
-  case "$b" in
-    current.md|timeline.md|current-*.md) : ;;
-    *) report FAIL ".ai/ 只留 current.md 与 timeline.md，文档应归 docs/: .ai/$b" ;;
+  [ -f "$f" ] || continue
+  case "$(basename "$f")" in
+    current.md|timeline.md) : ;;
+    *) report FAIL ".ai/ 只留 current.md 与 timeline.md: .ai/$(basename "$f")" ;;
   esac
 done
 
-if [ "$linked" = 0 ]; then
-  while IFS= read -r p; do
-    if [ -z "$p" ]; then continue; fi
-    for f in "$p"/.ai/contexts/*.md; do
-      if [ -e "$f" ] && [ ! -e ".ai/contexts/$(basename "$f")" ]; then
-        printf 'INFO  待归并 %s (%s)\n' "$(basename "$f")" "$(basename "$p")"
-      fi
-    done
-  done < "$tmp_paths"
+if [ -d .ai/contexts ]; then
+  report FAIL ".ai/contexts 已废弃（单窗口协作），不得重新建立"
 fi
 
-# 8 文档认领：同一文件被两个及以上窗口声明「正在改」即冲突。
-# 同一窗口的 context 在主 worktree 与其 worktree 内可能各有一份（合稿前后），按「窗口+路径」去重后再判冲突。
-tmp_claims=$(mktemp) || exit 2
-trap 'rm -f "$tmp_paths" "$tmp_pairs" "$tmp_ctx" "$tmp_claims"' EXIT HUP INT TERM
-tab=$(printf '\t')
-collect_claims() {
-  grep -Eo '正在改：[^[:space:]、,，]+' "$2" | sed 's|^正在改：||' | while IFS= read -r cpath; do
-    printf '%s%s%s\n' "$cpath" "$tab" "$1"
-  done
-}
-: > "$tmp_claims"
-for f in .ai/contexts/*.md; do
-  [ -f "$f" ] && collect_claims "$(basename "$f" .md)" "$f" >> "$tmp_claims"
-done
-while IFS= read -r p; do
-  if [ -z "$p" ]; then continue; fi
-  for f in "$p"/.ai/contexts/*.md; do
-    [ -f "$f" ] || continue
-    collect_claims "$(basename "$f" .md)" "$f" >> "$tmp_claims"
-  done
-done < "$tmp_paths"
-sort -u "$tmp_claims" -o "$tmp_claims"
-
-if [ ! -s "$tmp_claims" ]; then
-  printf 'INFO  无文档认领记录\n'
-else
-  cut -f1 "$tmp_claims" | sort -u > "$tmp_ctx"
-  while IFS= read -r path; do
-    who=$(awk -F'\t' -v p="$path" '$1==p { print $2 }' "$tmp_claims" | sort -u | tr '\n' ' ')
-    n=$(printf '%s' "$who" | wc -w)
-    if [ "$n" -gt 1 ]; then
-      report FAIL "同一文件被 $n 个窗口认领: $path → $who"
-    else
-      report PASS "认领唯一: $path → $who"
-    fi
-  done < "$tmp_ctx"
-fi
-
-# 9 派单信箱：文件名须有同名 context；target 不得与其他窗口认领冲突；文件还在 = 未交付。
 if [ -d .ai/dispatch ]; then
-  empty=1
-  for f in .ai/dispatch/*.md; do
-    if [ ! -f "$f" ]; then continue; fi
-    empty=0
-    id=$(basename "$f" .md)
-    if [ ! -f ".ai/contexts/$id.md" ]; then
-      report FAIL "孤儿派单: .ai/dispatch/$id.md 无同名 context .ai/contexts/$id.md"
-      continue
-    fi
-    tgt=$(grep -m1 -E '^- target:' "$f" | sed -E 's/^- target:[[:space:]]*//')
-    if [ -z "$tgt" ]; then
-      report FAIL "派单缺 target 字段: .ai/dispatch/$id.md"
-      continue
-    fi
-    holder=$(awk -F'\t' -v p="$tgt" -v w="$id" '$1==p && $2!=w { print $2 }' "$tmp_claims" | sort -u | tr '\n' ' ')
-    if [ -n "$holder" ]; then
-      report FAIL "派单目标冲突: $id 要改 $tgt，但该文件已被 $holder 认领"
-    else
-      report PASS "派单在架: $id → $tgt"
+  report FAIL ".ai/dispatch 派单信箱已废（单窗口协作），不得重新建立"
+fi
+
+for f in .ai/current-*.md; do
+  [ -e "$f" ] && report FAIL "游离文件 $f"
+done
+
+# ---------- 3.5 分类目录落点 ----------
+# docs/pi/ 下必须再分类：直接放一篇 .md 即违规（层次由目录表达，见 docs/README.md 第一节）
+for f in docs/pi/*.md; do
+  [ -e "$f" ] && report FAIL "文档未归类：$f 应放进 docs/pi/<分类>/ 子目录"
+done
+# 分类目录不得为空（移走文件后留下的空壳）
+for d in docs/pi/*/; do
+  [ -d "$d" ] || continue
+  [ -n "$(ls -A "$d" 2>/dev/null)" ] || report FAIL "空分类目录 $d"
+done
+# docs/ 下除索引层与 pi/ 之外不放东西
+for f in docs/*; do
+  case "$(basename "$f")" in
+    README.md|pi) : ;;
+    *) report FAIL "docs/ 下有非约定条目: $f" ;;
+  esac
+done
+
+# ---------- 10 索引层 ----------
+if [ ! -f docs/README.md ]; then
+  report FAIL "缺索引层 docs/README.md（三层结构与证据分档的唯一定义源）"
+else
+  # 名单由文件系统推导，不硬编码：docs/pi/ 下每篇都必须在索引层被命名
+  for f in docs/pi/*/*.md; do
+    [ -f "$f" ] || continue
+    name=$(basename "$f" .md)
+    grep -q "$name.md" docs/README.md || report FAIL "docs/README.md 未列出 $name.md"
+  done
+fi
+
+# 取正文（去掉代码围栏内的行）——代码块里的 `](./x.md)` 是示例，不是引用
+# 再去掉行内代码（单个反引号对）——散文里拿行内代码写出来的链接形态同样不是引用
+prose() { awk 'BEGIN{f=0} /^[[:space:]]*```/{f=!f; next} f==0{print}' "$1" | sed 's/`[^`]*`//g'; }
+
+# ---------- 4~9 每篇正文 ----------
+for f in docs/pi/*/*.md; do
+  [ -f "$f" ] || continue
+  base=$(basename "$f")
+
+  fences=$(awk '/^```/{c++} END{print c+0}' "$f")
+  if [ $((fences % 2)) -ne 0 ]; then
+    report FAIL "$base：代码围栏不成对（$fences 个），结构断言会失准"
+    continue
+  fi
+
+  h1=$(awk 'BEGIN{f=0} /^```/{f=!f; next} f==0 && /^# /{c++} END{print c+0}' "$f")
+  if [ "$h1" != 1 ]; then
+    report FAIL "$base：正文级标题应恰好 1 个，实际 $h1 个"
+  fi
+
+  if ! head -20 "$f" | grep -q '^> 用途：'; then
+    report FAIL "$base：篇首 blockquote 缺 \`> 用途：\` 一行"
+  fi
+  if ! head -20 "$f" | grep -q '^> 边界：'; then
+    report FAIL "$base：篇首 blockquote 缺 \`> 边界：\` 一行"
+  fi
+
+  # 章名列表（跳过代码块），去掉 ## 前缀
+  h2s=$(awk 'BEGIN{f=0} /^```/{f=!f; next} f==0 && /^## /{print substr($0,4)}' "$f")
+  h2n=$(printf '%s\n' "$h2s" | grep -c .)
+
+  toc_n=$(awk '/^## 本篇结构/{t=1; next} t==1 && /^## /{exit} t==1 && /^- /{c++} END{print c+0}' "$f")
+  if [ "$toc_n" = 0 ]; then
+    report FAIL "$base：缺 \`## 本篇结构\` 章级目录"
+  elif [ "$toc_n" != $((h2n - 1)) ]; then
+    report FAIL "$base：目录列了 $toc_n 条，实际有 $((h2n - 1)) 个章（\`## 本篇结构\` 自身不计）"
+  else
+    # 逐条核对目录项与真实章名
+    toc_items=$(awk '/^## 本篇结构/{t=1; next} t==1 && /^## /{exit} t==1 && /^- /{print substr($0,3)}' "$f")
+    bad=""
+    while IFS= read -r item; do
+      [ -n "$item" ] || continue
+      if ! printf '%s\n' "$h2s" | grep -qxF "$item"; then
+        bad="$bad |$item"
+      fi
+    done <<EOF_TOC
+$toc_items
+EOF_TOC
+    [ -n "$bad" ] && report FAIL "$base：目录项对不上真实章名：$bad"
+  fi
+
+  # 尾块名目与顺序
+  for old in 修订记录 状态 与其他文档的分工; do
+    if printf '%s\n' "$h2s" | grep -qxF "$old"; then
+      report FAIL "$base：尾块仍在用旧名「$old」，规范名目见 docs/README.md 第五节"
     fi
   done
-  if [ "$empty" = 1 ]; then
-    printf 'INFO  .ai/dispatch 无待回收派单\n'
+  last_h2=$(printf '%s\n' "$h2s" | tail -1)
+  if [ "$last_h2" != "变更记录" ]; then
+    report FAIL "$base：最后一个章应是「变更记录」，实际是「$last_h2」"
   fi
-else
-  printf 'INFO  无 .ai/dispatch 目录\n'
-fi
+  order_check=$(printf '%s\n' "$h2s" | awk '
+    BEGIN{ split("相关文档 参考 未覆盖事项 变更记录", want, " "); n=0; prev=0 }
+    { for (i=1;i<=4;i++) if ($0==want[i]) { if (i<prev) { print "乱序:" $0; bad=1 } prev=i; n++ } }
+    END{ if (!bad) print "ok" }')
+  case "$order_check" in
+    ok) : ;;
+    *) report FAIL "$base：尾块顺序不符（相关文档 → 参考 → 未覆盖事项 → 变更记录），$order_check" ;;
+  esac
+
+  # markdown 相对链接目标存在
+  d=$(dirname "$f")
+  links=$(prose "$f" | grep -o '](\.[^)]*\.md)' | sed 's/^](//; s/)$//')
+  while IFS= read -r l; do
+    [ -n "$l" ] || continue
+    [ -f "$d/$l" ] || report FAIL "$base：链接目标不存在 $l"
+  done <<EOF_LINK
+$links
+EOF_LINK
+done
+
+# 根 README 与索引层自己的链接
+for f in README.md docs/README.md; do
+  [ -f "$f" ] || continue
+  d=$(dirname "$f")
+  links=$(prose "$f" | grep -o ']([^)(*]*\.md)' | sed 's/^](//; s/)$//')
+  while IFS= read -r l; do
+    [ -n "$l" ] || continue
+    case "$l" in
+      http*) continue ;;
+    esac
+    [ -f "$d/$l" ] || report FAIL "$f：链接目标不存在 $l"
+  done <<EOF_ROOTLINK
+$links
+EOF_ROOTLINK
+done
 
 if [ "$fail" = 1 ]; then
   printf '结论：存在违规\n'
