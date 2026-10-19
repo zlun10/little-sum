@@ -34,7 +34,7 @@
 | --- | --- |
 | SoC | Broadcom BCM2837B0，64 位四核 Cortex-A53 @ 1.2 GHz（ARMv8-A） |
 | GPU | VideoCore IV @ 400 MHz，与 Pi 1 / Pi 2 同款 |
-| 内存 | 1 GB LPDDR2；GPU 占比由 `config.txt` 的 `gpu_mem=` 决定，查 `vcgencmd get_config int gpu_mem`（本板 76M） |
+| 内存 | 1 GB LPDDR2；GPU 占比由 `config.txt` 的 `gpu_mem=` 决定，查 `vcgencmd get_mem gpu`——本板默认推导 **76M/948M**，2026-10-19 实测显式 `gpu_mem=16` 可用（**16M/998M**，`free` total 921 → 970），代价见 [`rpi-network.md`](../access/rpi-network.md)「④ 的执行实录」 |
 | 存储 | microSD 卡槽，无 eMMC、无 PIO、**无 RTC** |
 | 有线网络 | 10/100 Base-T `[事实]`：SoC 侧 MAC 10/100，经 USB 2.0 上联板载 SMSC LAN9514（驱动 `smsc95xx`） |
 | 无线 | 802.11n 2.4 GHz + 蓝牙 4.1 **带 BLE**；产品页型号 BCM43438，驱动/固件名归 43430 一族（见 2.1） |

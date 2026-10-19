@@ -95,13 +95,25 @@ A：改顶层一个开关就够——`sudo systemctl set-default multi-user.targ
 A：串口 getty 在跑（本板 `serial-getty@ttyS0` = `active`），否则关掉唯一控制台就没有控制台。详见 `rpi-status.md` 第七节。
 
 **Q：关了屏还能用 wayvnc 看桌面吗？**
-A：不能，wayvnc 挂在桌面栈上，随第一档一起消失——这是四档里唯一不可自动恢复的便利。
+A：不能，wayvnc 挂在桌面栈上，随第一档一起消失——这是四档里唯一不可自动恢复的便利。**另有一条 ① 的后遗症**：`rpi-connect` 还在每 5 秒拉一次 `rpi-connect-wayvnc.service` 并失败，`journalctl -p err` 会刷屏；系统层没坏，要清得 mask 那个 user unit（本仓未处理）。
+
+**Q：现在关屏走到第几档了？**
+A：**② ＋ ④**。①② 已执行并重启复验，④（`gpu_mem=16`）已执行；③（注释 `vc4-kms-v3d`）**没做，而且实测表明不必为 ④ 去做它**。回退一条条来：`sudo cp /boot/firmware/config.txt.bak /boot/firmware/config.txt`（④）、`sudo cp /boot/firmware/cmdline.txt.bak /boot/firmware/cmdline.txt && sudo systemctl enable getty@tty1`（②）、`sudo systemctl set-default graphical.target`（①），前两条都要重启。
 
 **Q：省到底是不是要把 `vc4-kms-v3d` 注释掉？**
-A：那才是真无 DRM，但 `camera_auto_detect=1` 连带失效、boot 早期能否出图未验，所以排第三档，别先动。
+A：那是真无 DRM 的一档，`camera_auto_detect=1` 连带失效、boot 早期能否出图未验。但**它不是降 `gpu_mem` 的前提**——本板已实测 KMS 开着也能降到 16，所以为拿内存去做 ③ 是白付代价；③ 现未执行。
 
 **Q：`gpu_mem` 能降到多少？**
-A：KMS 开着时的最小允许值 `[待验证]`，本仓不编数；且只在注释掉 KMS 之后才谈降它。
+A：本板实测 **16 可用**（2026-10-19 已执行：`config.txt` 追加 `gpu_mem=16` 后重启，固件与 boot 都不报错），`arm` 从 948M 变 998M、`free` total 从 921 变 **970**（+49 MB）。中间值（32/64）未测，只做过「默认 vs 16」两点对照。详见 `rpi-network.md`「④ 的执行实录」。
+
+**Q：降 `gpu_mem` 的代价是什么？会不会黑屏？**
+A：板子无头，黑屏无从谈起；真实代价是 **VCHI**：`gpu_mem=16` 时固件 VCHI 服务起不来，`vc_sm_cma` 与 `bcm2835_mmal_vchiq` 报 `-22`，`/dev/video*` 那 13 个节点**整个消失**。本板没插相机所以当下无感，要用 `rpicam-*`/libcamera 那条路就得把 `gpu_mem` 抬回去。判别一条命令：`ls /dev/video*`。
+
+**Q：改配置前想跟改之前对比，翻旧日志行不行？**
+A：不行，本板 journald **非持久**（`journalctl -b -1 -k` 回 `no persistent journal was found`），上一个 boot 的内核日志已经没了。→ A/B 必须在重启**之前**把当轮 `dmesg` 读完，否则只能把对照组重跑一遍（本轮就是这么补的）。
+
+**Q：`journalctl -p err` 里每 5 秒一条 wayvnc 启动失败，是不是关屏关坏了？**
+A：是 ① 的后遗症但不是故障：`rpi-connect` 还在拉 `rpi-connect-wayvnc.service`，而它的桌面依赖已经不在。系统层没坏（SSH、串口 getty、音频卡、蓝牙全在）。要清得 mask 那个 user unit，**本仓未处理**。
 
 **Q：切到 multi-user 之后 `ps` 里还有 portal 和 wireplumber，是不是没关干净？**
 A：不是。`cut -d: -f3 /proc/<pid>/cgroup` 显示它们挂在 `/user.slice/user-1000.slice/user@1000.service/…`，是**这次 SSH 登录自己拉起的 user session**，与 `graphical.target` 无关；要清得 mask user units，代价是音频和 portal 没。→ 判据：残留先看 cgroup 再决定关不关，别一律当桌面残留。
@@ -114,6 +126,15 @@ A：不是。② 不动内存；差值来自**这次连接还没拉起 user sess
 
 **Q：改 `cmdline.txt` 有什么会把板子变砖的写法？**
 A：两件事：**整篇必须是一整行**（换行＝内核参数解析失败，直接起不来），以及**别只读一边就下结论**——本板文件里写 `console=serial0,115200`，`/proc/cmdline` 里显示 `console=ttyS0,115200`，同一个东西被别名翻译过，不是冲突。改前先 `sudo cp` 一份 `.bak`，改完用 `diff <(tr ' ' '\n' < 旧) <(tr ' ' '\n' < 新)` 数差异。
+
+**Q：改了 `gpu_mem`，怎么知道那些内核报错是它带来的？**
+A：只能靠 A/B，而且本板 **journald 非持久**（`journalctl -b -1 -k` 回 `no persistent journal was found`），上一个 boot 的日志已经没了、事后翻不到。做法是改前把当轮 `sudo dmesg | grep -icE 'VCHI|vc_sm|mmal'` 记下，重启后再数一次；本轮就是这么把「4 条 VCHI 失败」归到 `gpu_mem=16` 头上的（默认那轮是 0 条失败、只有 staging 警告）。
+
+**Q：`journalctl -p err` 里每 5 秒一条 wayvnc 启动失败，是不是关屏关坏了？**
+A：是 ① 的后遗症，不是故障：`rpi-connect` 还在拉 `rpi-connect-wayvnc.service`，而它的桌面依赖已经不在了；SSH、串口 getty、音频卡、蓝牙都正常。要清得 mask 那个 user unit，**本仓未处理**。
+
+**Q：关屏与降 `gpu_mem` 会影响音频或蓝牙吗？**
+A：实测不影响——`gpu_mem=16` 时 `/proc/asound/cards` 仍是 `vc4hdmi` + `bcm2835 Headphones`，`bluetooth` = `active`，`wireplumber` 照常跑。`/dev/dri/card0` 也还在（③ 没做，KMS 未动）。
 
 **Q：欠压会让 GPIO 一起出问题吗？**
 A：会混淆判断，所以硬规则是 `get_throttled` 非 `0x0` 就不接 GPIO 外设、不跑写 SD 的负载。详见 `rpi-status.md` 第三节。
@@ -148,4 +169,5 @@ A：本仓长期裁定，推送逐次授权；协作约定而非板子事实，�
 
 ## 变更记录
 
+- 2026-10-19（②④ 执行后续档）：第五节补 ② 的重启判据、`cmdline.txt` 一整行的坑、④ 的 `gpu_mem=16` 实测与 VCHI 代价、journald 非持久导致的 A/B 约束、wayvnc 每 5 秒重试这条 ① 的后遗症，以及「现在走到第几档」的现状条目。
 - 2026-10-19（成文）：新建问答篇，收录本轮 `[板上实测]` 期间用户实际问过的问题与当场结论；形态（一条一问一答、不写表）同时写进索引层第六节第 9 条并加机检。

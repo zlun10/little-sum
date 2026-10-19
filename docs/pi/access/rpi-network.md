@@ -339,10 +339,10 @@ systemctl get-default                        # 下次开机进哪个目标
 「关屏能省多少」的答案**不是驱动，是整套桌面**。本板实测：`systemctl get-default` → `graphical.target`，`lightdm` **active**，自动登录会话拉起 **labwc**（PPID 是 lightdm 的 autologin session scope），wayvnc / wayvnc-control / wf-panel-pi / `pcmanfm --desktop` / 三个 `xdg-desktop-portal` / wireplumber 全在这条链上，**RSS 合计 249 MB（全板 921 MB）**。
 
 - **依赖链决定关哪一层最有效**：`graphical.target` → `lightdm.service` → session scope → labwc → 其余。**改顶层一个开关，下面全塌**，不需要逐个 `mask`。
-- `vc4-kms-v3d` 与 `/dev/dri/card0` 属驱动层，注释 overlay 才是真无 DRM，但会连带 `camera_auto_detect=1` 失效，且**注释后 boot 早期能否出图本板未验**（`[待验证]`）。`gpu_mem=76M` 在 KMS 下的最小允许值同样 `[待验证]`。
+- `vc4-kms-v3d` 与 `/dev/dri/card0` 属驱动层，注释 overlay 才是真无 DRM，但会连带 `camera_auto_detect=1` 失效，且**注释后 boot 早期能否出图本板未验**（`[待验证]`）。`gpu_mem` 一栏已由 ④ 实测：**KMS 开着也能降到 16**，固件与 boot 都不报错（见「④ 的执行实录」），但代价是 VCHI 整套起不来——与本节原先「16 的最小允许值未核」的口径不同，那条 `[待验证]` 就地升格。
 - **关屏的前置条件本板已满足**：`/dev/serial0 -> ttyS0`（mini UART，`config.txt` 有 `enable_uart=1`），`serial-getty@ttyS0.service` 为 **active**（`enabled-runtime`）。关掉图形控制台后串口仍是登录入口。
 - **一条不可自动恢复的代价**：远程看画面靠 `wayvnc.service` + `wayvnc-control.service`（后者 `BindsTo=wayvnc.service`），随顶层一起消失。SSH 与 ttyd 不受影响。
-- **四个档位按代价递增，本板现停在 ②**：① `sudo systemctl set-default multi-user.target`（可逆，免重启生效用 `isolate`）——**2026-10-19 已由用户选定并执行，见下面的执行实录**；② 在 ① 之上 `sudo systemctl disable getty@tty1`，并把 `cmdline.txt` 的 `console=tty1`、`quiet splash`、`plymouth.ignore-serial-consoles` 删掉只留串口那一条 console——省不了内存，买到「所有输出只从串口走」这条确定性；**2026-10-19 同日也已执行并重启复验，见「② 的执行实录」**；③ 注释 `dtoverlay=vc4-kms-v3d` 与 `max_framebuffers=2`，真无 DRM 与 HDMI 输出，代价是 `camera_auto_detect` 失效、且要重启才生效（改坏时**串口就是唯一救援入口**，所以 ② 必须排在 ③ 前面做）——**未执行，等用户定点**；④ 只在走完 ③ 之后才谈 `gpu_mem` 下调。①② 属系统层、可当场回退，③④ 属固件层。
+- **四个档位按代价递增，本板现停在「② ＋ ④」，③ 跳过未做**：① `sudo systemctl set-default multi-user.target`（可逆，免重启生效用 `isolate`）——**2026-10-19 已由用户选定并执行，见下面的执行实录**；② 在 ① 之上 `sudo systemctl disable getty@tty1`，并把 `cmdline.txt` 的 `console=tty1`、`quiet splash`、`plymouth.ignore-serial-consoles` 删掉只留串口那一条 console——省不了内存，买到「所有输出只从串口走」这条确定性；**2026-10-19 同日也已执行并重启复验，见「② 的执行实录」**；③ 注释 `dtoverlay=vc4-kms-v3d` 与 `max_framebuffers=2`，真无 DRM 与 HDMI 输出，代价是 `camera_auto_detect` 失效、且要重启才生效（改坏时**串口就是唯一救援入口**，所以 ② 必须排在 ③ 前面做）——**未执行；且实测表明它不是 ④ 的前提，为拿内存而做 ③ 是白付代价**；④ `gpu_mem` 下调——**同日已执行（`gpu_mem=16`），这是四档里唯一真把内存还给 arm 的一档（+49 MB），代价是 VCHI/相机路径没**。①② 属系统层、可当场回退，③④ 属固件层。
 
 ### ① 的执行实录：省到的不是 249 MB，是 50 MB（`[板上实测]` 2026-10-19，经 SSH 执行）
 
@@ -395,6 +395,29 @@ console=serial0,115200 root=PARTUUID=<分区> rootfstype=ext4 fsck.repair=yes ro
 
 - **一条新的读数判据**：used 从「① 之后 194」掉到「重启后 136」，差值不是 ② 省下的（② 不动内存），是**这次连接还没拉起 user session**（portal/wireplumber/rpi-connectd 那 50 MB 一类）。→ **同一块板的 `free` 读数要按「这次会话登录了多久」对照，跨会话比数必然得出假的「又省了」。**
 - **①② 现已都是「配置就位＋重启复验通过」**，不再依赖 `isolate` 的临时状态。回退仍是两条：`sudo systemctl set-default graphical.target && sudo systemctl isolate graphical.target`、`sudo cp /boot/firmware/cmdline.txt.bak /boot/firmware/cmdline.txt && sudo systemctl enable getty@tty1`（后者要再重启才完全回退）。
+
+
+### ④ 的执行实录：`gpu_mem=16` 拿到了 49 MB，代价是 VCHI 整套没（`[板上实测]` 2026-10-19，三轮重启 A/B）
+
+用户直接点 ④（跳过 ③）。改法一行：`printf 'gpu_mem=16\n' | sudo tee -a /boot/firmware/config.txt`（追加在 `[all]` 段末尾），备份 `config.txt.bak`，重启。
+
+| 项 | `gpu_mem` 默认（无该行，实测 76M） | `gpu_mem=16` |
+|---|---|---|
+| `vcgencmd get_mem gpu` / `arm` | 76M / 948M | **16M / 998M** |
+| `free -m` total | **921** | **970**（+49） |
+| `free -m` available（boot 后） | 794 | **846**（+52） |
+| `sudo dmesg` 里的 VCHI | 无失败行，只有 staging 警告 | **4 条 `Failed to open VCHI service (-22)`**，含 `vc_sm_cma_vchi_init` 与 `bcm2835_mmal_vchiq` |
+| `/dev/video*` | 13 个（`video10…31`） | **一个都没有** |
+| `/dev/dri` | `card0`/`renderD128` | 不变（KMS 没动） |
+| `/proc/asound/cards` | `vc4hdmi` + `bcm2835 Headphones` | 不变（3 行计数同） |
+| 蓝牙 / 串口 getty / SSH | active | 全不受影响 |
+
+- **本仓原先那句「④ 只在走完 ③ 之后才谈」被实测推翻**：`gpu_mem` 单独就能降，KMS 不拦（16 是允许值，boot 与固件都不报错），**不需要以 ③ 为前提**。
+- **真正的代价不是显示，是 VCHI**：`gpu_mem=16` 时固件侧 VCHI 服务起不来 → `vc_sm_cma`（相机/camera 用的共享内存）与 `bcm2835_mmal_vchiq`（老 MMAL 栈）全部初始化失败，`/dev/video*` 那 13 个节点整个消失。**本板没插相机，所以当下无感**；一旦要用 `rpicam-*`/libcamera（老栈路径）就得把 `gpu_mem` 抬回去。→ 判据：**这条不是「相机驱动没加载」，是 GPU 分少了导致固件服务没起，`ls /dev/video*` 是最快的判别。**
+- **中间值未测**：`gpu_mem=32/64` 是否同样砍掉 VCHI `[待验证]`；本轮只做了「默认 vs 16」两点对照，没画曲线。
+- **方法账（为什么必须重启两次）**：本板 journal **非持久**（`journalctl -b -1 -k` → `no persistent journal was found`），跨 boot 对照不能事后取证。所以每次改动前先把当轮 `dmesg` 计数读完再重启，A/B 才成立。
+- **一条与 ④ 无关但被重启照出来的旧问题**：`rpi-connect-wayvnc.service` 在 user session 里**每 5 秒重试启动并失败**（`journalctl -b -p err` 刷屏），是 ① 关掉桌面栈的后遗症——wayvnc 的可执行依赖没了但 rpi-connect 还在拉它。**未处理**（要么 mask 那个 user unit，要么留着不管，刷屏只在 journald 里）。
+
 
 
 ### 显示侧验证
@@ -602,6 +625,7 @@ Pi 侧三个必查点：
 
 ## 变更记录
 
+- 2026-10-19（关屏 ④ 执行，本窗口经 SSH 三轮重启做 A/B）：新增**「④ 的执行实录」**。`config.txt` 追加 `gpu_mem=16`（备份 `.bak`）后重启——`get_mem` 回 `16M/998M`、`free` total **921 → 970**，③ 没做。**推翻本仓旧口径两处**：① 「④ 只在走完 ③ 之后才谈」不成立，KMS 开着照样能降到 16；② 「`gpu_mem` 在 KMS 下的最小允许值 `[待验证]`」就地升格为「16 可用」。**新查到的代价不在显示在 VCHI**：`gpu_mem=16` 时 `vc_sm_cma_vchi_init` 与 `bcm2835_mmal_vchiq` 报 `-22`、`/dev/video*` 13 个节点整个消失（默认那轮 0 条失败）——本板无相机故当下无感，要用 `rpicam-*`/libcamera 须抬回。方法账一条：本板 journald **非持久**，跨 boot 对照必须改前当场取。顺带照出 ① 的后遗症：`rpi-connect-wayvnc.service` 每 5 秒重试失败刷 `journalctl -p err`，未处理。
 - 2026-10-19（关屏 ①② 执行，本窗口经 SSH 执行）：「显示输出与无头模式」的关屏小节由**方案层升为已执行层**。① `set-default multi-user.target` ＋ `isolate` 当场实测 used 244 → 194（**50 MB，不是旧记的 249**——249 是桌面会话满开时的合计，执行前 wayvnc 已 `inactive`），残留的 portal/wireplumber 经 cgroup 判认为 SSH 自身的 user session；② `disable getty@tty1` ＋ 改写 `cmdline.txt`（删 `console=tty1`/`quiet splash`/`plymouth.ignore-serial-consoles`，逐 token `diff` 核过、仍一整行、`.bak` 留底），再起 `sudo reboot` 复验：新 cmdline 生效、`getty@tty1` `disabled`+`inactive`、串口 getty 仍 `active`、**① 重启后保住**、全新 boot used 136。同时撤回上一条里我自己写错的一句：文件原文是 `console=serial0,115200`，`/proc/cmdline` 显示 `ttyS0` 是设备树 alias 被内核解析，**不是冲突**（判据：比 cmdline 要成对读文件值与运行时值）。`vc4-kms-v3d` 未动（属 ③）。
 - 2026-10-19（分目录）：本篇由 `docs/pi/` 根移入 **`docs/pi/access/`**，跨分类的相对链接改为 `../<分类>/`，指向索引层改为 `../../README.md`；**章号与散文式引用（「`rpi-xxx.md` 第 N 节」）一条未动**——散文只认文件名，而文件名在全仓唯一。分类依据与机检见 `docs/README.md` 第一节。
 
