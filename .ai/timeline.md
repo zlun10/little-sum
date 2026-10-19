@@ -1,5 +1,15 @@
 # 任务时间线
 
+## 2026-10-19（关屏 ④）— 「④ 必须先走 ③」是本仓自己编的前置条件，实测不成立
+
+- 决策（用户「③具体内容给」→ 我给完 ③ 的内容并指出它当下无收益，用户回「4」）：**跳过 ③，直接做 ④**（`config.txt` 追加 `gpu_mem=16` ＋ 重启）。理由是当场读到的两条：`lsof /dev/dri/card0` 空（① 之后没人用 DRM，③ 关掉的是闲置驱动），而 ③ 的代价（`camera_auto_detect` 失效、boot 回退路径未验）是确定的。
+- **推翻的旧口径（两处，都写进过文档）**：① 「④ 只在走完 ③ 之后才谈 `gpu_mem`」——KMS 开着照样能降到 16，固件与 boot 都不报错，**这条前置是我推断出来的，没有任何出处**；② 「`gpu_mem` 在 KMS 下的最小允许值 `[待验证]`」——本板实测 16 可用，就地升格，不再是不确定项。
+- 实测（三轮重启的 A/B，`[板上实测]`）：默认（无 `gpu_mem` 行，推导 76M）→ `get_mem` 76M/948M、`free` total 921、`dmesg` **0 条** VCHI 失败、`/dev/video*` 13 个；`gpu_mem=16` → **16M/998M、total 970（+49 MB）、4 条 `Failed to open VCHI service (-22)`（`vc_sm_cma` ＋ `bcm2835_mmal_vchiq`）、`/dev/video*` 全没**。`/dev/dri`、两声卡（`vc4hdmi`＋`bcm2835 Headphones`）、蓝牙、串口 getty 在两组里都不变。
+- **根因与判据（新增的可复用一条）**：降 `gpu_mem` 砍掉的**不是显示，是固件 VCHI 服务**——GPU 内存低于某个门限后 VCHI 不再对外提供，依赖它的 `vc_sm_cma`（相机共享内存）与老 MMAL 栈一起初始化失败，`/dev/video*` 因此整批消失。→ **最快的判别是一条 `ls /dev/video*`，而不是去猜相机驱动。** 本板没插相机，所以这笔代价当下无感；但它把「将来插相机」变成一次必须回退 `gpu_mem` 的操作，这条写在 `rpi-network.md` 的 ④ 节。
+- **方法账（为什么 A/B 必须重启两次而不能翻日志）**：本板 **journald 非持久**（`journalctl -b -1 -k` → `no persistent journal was found`），上一个 boot 的内核日志在重启那一刻就没了。所以对照组的数只能在改之前当场读完存进会话，跨 boot 事后取证不成立——这与 [[feedback-comparison-needs-same-moment]] 是同一类坑，本条是本板的具体形态。
+- 顺带照出的一条 ① 后遗症（未处理）：`rpi-connect-wayvnc.service` 每 5 秒重试启动并失败，刷 `journalctl -b -p err`；系统层无恙，要清得 mask 那个 user unit。另 `get_throttled` 三轮重启后仍 `0x50000`，**再次确证重启不解决欠压**。
+- 未做：`gpu_mem` 中间值（32/64）是否同样砍 VCHI `[待验证]`；③ 仍未执行，现判定为「非必要不做」。
+
 ## 2026-10-19（② 重启复验）— 远程重启前必须先分清「发不出去」和「发了没生效」
 
 - 决策（用户「发重启命令并盯着上线」）：由本窗口 `ssh pi sudo reboot` 并轮询上线，不再等用户手动重启。
