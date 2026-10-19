@@ -58,11 +58,12 @@
 
 | 读数 | 含义 | 本板 |
 | --- | --- | --- |
-| bit0（低 4 位） | **当下**正在欠压 | `0` |
+| bit0（低 4 位） | **当下**正在欠压 | `0`（2026-10-19 连续 45 次采样恒 0） |
 | bit1 / bit2 | **当下** ARM 限频 / 软限频 | `0` |
 | bit16 | 开机以来**发生过**欠压 | `0x50000` = 置位 |
 | bit18 | 开机以来**发生过** ARM 限频 | 置位 |
-| 高位锁存特性 | 只有重启清零，故非零分不清历史还是当下 | 重启后约 46 秒空载即重新锁存 `0x50000` |
+| 高位锁存特性 | 只有重启清零，故**单次读数分不清历史还是当下** | 重启后约 46 秒空载即重新锁存 `0x50000` |
+| 分辨办法：**连续采样看 bit0 会不会跳** | 一次读数不能判「持续」；只有高频复读 bit0 才行 | `[板上实测]` 2026-10-19：boot 后 52 分钟起，**45 次 × 2 秒全为 `0x50000`、bit0 恒 0** → **不是持续欠压**，事件定位在**上电后头 46 秒内**（要精确到第几秒，得重启后立刻 1Hz 采样，未做） |
 
 | 别这么读 | 真相 |
 | --- | --- |
@@ -112,6 +113,8 @@
 | 谁占了哪条线 | `gpioinfo -c gpiochip0` | chip 0/1/2，另有 `/dev/gpiochip4` 链接 | libgpiod 2.2.1 **必须带 `-c`**；判据见 [`rpi-gpio-robust.md`](../gpio/rpi-gpio-robust.md) 第八节 |
 | 桌面开没开 | `ls /dev/dri` + `systemctl get-default` + `systemctl is-active lightdm` | `card0`/`renderD128`、`multi-user.target`、`inactive`（2026-10-19 ① 之后；此前为 `graphical.target`/`active`） | 三条合起来才算「桌面开着」；单看 `/dev/dri` 只说明 KMS 驱动在——**本板现在正是这种半开状态** |
 | 串口控制台可用吗 | `ls -l /dev/serial0`；`systemctl is-active serial-getty@ttyS0.service`；`is-enabled` | `serial0 -> ttyS0`、`active`、`enabled-runtime` | **关屏之前必须先确认这条**，否则关掉唯一控制台就没有控制台 |
+| 屏上会不会有字 | `cat /sys/class/vtconsole/vtcon*/name` | 只有 `(S) dummy device`（2026-10-19，② 之后） | 虚拟控制台没绑到帧缓冲 = **插了屏也是纯黑**。这条比 `is-active lightdm` 直接——桌面关了只影响「有没有 GUI」，vtcon 才决定「有没有字符」 |
+| HDMI 口是被关还是没插 | `for c in /sys/class/drm/card0-*; do echo $(basename $c) $(cat $c/status); done` | `card0-HDMI-A-1 disconnected`、`card0-Writeback-1 unknown` | `disconnected` = **当下没插线**，不是禁用；真禁用要 `hdmi_ignore_hotplug=1` 或注释 `vc4-kms-v3d`，本板两条都没做 |
 
 ## 八、本板基线速查（带病基线）
 
@@ -120,6 +123,8 @@
 | 项 | 2026-10-19 读数 | 状态 |
 | --- | --- | --- |
 | `get_throttled` | `0x50000`（重启后 46 秒即重新锁存） | **异常，待换电源复测** |
+| `get_throttled` 连续采样 | boot 后 **52 分钟**起，**45 次 × 2 秒全部 `0x50000`**、拆位 **bit0 恒 0**、bit16 恒 1 | **不是持续欠压**：本 boot 内确实发生过（bit16 锁存），但 90 秒窗口内没有任何一刻正在欠压（bit0=0）→ 事件定位在**上电后头 46 秒内** |
+| ① 的落点文件 | `lrwxrwxrwx … Oct 19 12:59 /etc/systemd/system/default.target -> /usr/lib/systemd/system/multi-user.target` | `[板上实测]` 确认：`set-default` 就是改这个符号链接，链接时间戳＝执行 ① 的时刻；`readlink` 回全路径，`systemctl get-default` 回 `multi-user.target` |
 | `measure_temp` | `44.0'C`（空载） | 正常 |
 | `free -m` | total **970** / used 124 / available 846（`gpu_mem=16` 之后，2026-10-19） | 正常；默认 `gpu_mem`（推导 76M）时 total 只有 921 |
 | `vcgencmd get_mem gpu`/`arm` | **16M / 998M**（显式 `gpu_mem=16`） | 正常；未写该行时为 `76M / 948M` |
@@ -133,6 +138,9 @@
 | 默认控制台 | 运行时 `console=ttyS0,115200`（文件里写 `serial0`，别名被内核解析），无 `tty1`；串口 getty active | 可用；② 已于 2026-10-19 重启复验通过 |
 | `getty@tty1` | `disabled` + `inactive`（重启后） | tty1 无登录口，唯一控制台是串口 |
 | 图形 | `multi-user.target`、lightdm `inactive`（① 已于 2026-10-19 执行）；`vc4-kms-v3d` **未注释**，KMS 驱动层仍在 | 桌面栈已停；驱动层属 ③，未动 |
+| DRM 连接器 | `card0-HDMI-A-1` = `disconnected`（未插线）、`card0-Writeback-1` = `unknown` | 输出通路完好；①②④ 都没关 HDMI |
+| 虚拟控制台 | `vtcon*/name` 只有 `(S) dummy device` | ② 的直接后果：屏上不会有开机字符与登录提示 |
+| `CmaTotal` / `CmaFree` | 262144 kB / 259796 kB（`gpu_mem=16` 之后） | **没被 ④ 缩掉**，仍是 256 MB；④ 砍的是固件侧 VCHI，不是内核连续内存池 |
 
 ## 九、假读数清单
 
@@ -141,7 +149,7 @@
 | `iw: command not found` = 没装 | 非交互 PATH 缺 `/usr/sbin`；加 `sudo` 或 `bash -lc` 再判 |
 | `swapon --show` 空 = 没配 swap | 非 root 读不到，带 `sudo` 得到 `/dev/zram0` |
 | `free 231` = 内存不够 | 看 `available 687` |
-| `get_throttled` 高位非零 = 当下在欠压（或「只是历史」） | 只有「重启后立刻复读」能分辨 |
+| `get_throttled` 高位非零 = 当下在欠压（或「只是历史」，或「一直在欠」） | 单次读数两样都判不了：**判「当下」看 bit0，判「一直」要连续采样**——本板 45 次 × 2 秒 bit0 恒 0，所以「一直有」不成立 |
 | `measure_volts` 1.2688V = 适配器不行 | 那是 ARM 核心电压 |
 | `dmesg` under-voltage 计数 0 = 供电正常 | 本板内核不告警 |
 | `journalctl --since <时刻>` 无记录 = 那时没事 | 先确认该时刻在本次 boot 之内 |
@@ -149,6 +157,9 @@
 | `ls /dev/dri` 有 `card0` = 桌面在跑 | 要加 `get-default` 与 `is-active lightdm` |
 | `/proc/cmdline` 里的串 = `cmdline.txt` 文件里的串 | 运行时视图会被归一化（本板文件写 `console=serial0,115200`，`/proc` 显示 `ttyS0`）；比配置要成对读两边 |
 | `ps` 里有 portal/wireplumber = 桌面没关干净 | 先 `cut -d: -f3 /proc/<pid>/cgroup`，挂在 `user@1000.service` 的是这次 SSH 登录自己的 user session |
+| `systemctl is-enabled lightdm` = `enabled` = 桌面在跑 | 它只说明「被 graphical.target 拉起时会起」；默认 target 是 `multi-user` 就永远不起。本板 ① 之后正是 `enabled` 却不 active |
+| `card0-HDMI-A-1` = `disconnected` = HDMI 已禁用 | 那是**没插线**。真禁用是 `hdmi_ignore_hotplug=1` 或去掉 `vc4-kms-v3d`，本板都没做 |
+| `gpu_mem=16` = 显示相关内存全都降了 | `CmaTotal` 仍 256 MB 没动；④ 实际砍掉的是固件侧 VCHI（判据 `ls /dev/video*`） |
 | `/var/log/auth.log` 读不到 = 没记日志 | 本板认证日志在 journald |
 
 ## 相关文档
@@ -170,12 +181,14 @@
 
 1. **阈值无官方可依**：`available` 低到多少算危险、`df` 到多少要先清理，本仓不编；要定阈值需用户给出负载。
 2. **SD 磨损读不到**：本轮没找到本板可用的健康属性，故未写命令。
-3. **没有「关屏后」对照读数**：249 MB 与 available 687 都是桌面开着时读的，关屏回到多少待实测。
+3. ~~**没有「关屏后」对照读数**：249 MB 与 available 687 都是桌面开着时读的，关屏回到多少待实测。~~ **已覆盖（2026-10-19，①②④ 之后）**：关屏实得 50 MB（used 244→194），`gpu_mem=16` 再 +49（total 921→970、available 846）；② 之后全新 boot used 136。**仍未覆盖**：④ 对**真插显示器出图**的影响，本板全程无头，一组都没测。
 4. **未做长时间采样**：全部瞬时读数；`bgscan` 持续报错有无连带影响未观测。
 5. **温度限值与限频触发点未核**：只读到 `thermal_zone0` 的 `trip_point_0_temp = 110000`，官方 `temp_soft`/`temp_hard` 默认值 `[待验证]`。
 
 ## 变更记录
 
+- 2026-10-19（第二次补读，板子曾不可达约十分钟）：第三节加「分辨持续 vs 瞬时只能连续采样 bit0」一行并记下 **45 次 × 2 秒、bit0 恒 0** 的实测；第八节基线补两行（**① 的落点文件已实测**：`default.target` 软链接 → `/usr/lib/systemd/system/multi-user.target`，时间戳＝执行 ① 那刻；`get_throttled` 连续采样行）。这一轮把「欠压一直有」这个读法排除掉了。
+- 2026-10-19（回答「屏还能不能用」）：第七节新增两行（屏上会不会有字看 `vtcon*/name`、HDMI 是被关还是没插看 `card0-*/status`），第八节补 DRM 连接器／虚拟控制台／`CmaTotal` 三行，第九节补三条假读数（`is-enabled lightdm`≠桌面在跑、`disconnected`≠禁用、`gpu_mem=16`≠显示内存全降）；未覆盖事项第 3 条按 ①②④ 实测划掉，只留「④ 对真插屏出图的影响未测」。结论：**①②④ 都没关 HDMI 通路，屏不是不能用，是当下没有任何东西往屏上画。**
 - 2026-10-19（②④ 之后改基线）：第八节按关屏进度重读——`free` total 由 921 变 **970**（`gpu_mem=16`）、新增 `get_mem gpu` 与 `/dev/video*` 两行；第七节「桌面开没开」与「默认控制台」两行改到 ①② 执行后的读数；第九节补两条假读数（`/proc/cmdline` 不等于 `cmdline.txt` 文件值、`free` 跨会话不可直接比）。执行过程与判据归 [`rpi-network.md`](../access/rpi-network.md) 的三个「执行实录」小节。
 - 2026-10-19（查表化）：本篇由叙述压成查表，「命令／读数／判读」三列到底，长段根因不再复述（回溯见 `.ai/timeline.md`）。**章号与章名未动**。
 - 2026-10-19（分目录）：由 `docs/pi/` 根移入 `docs/pi/hardware/`，路径链接改 `../<分类>/` 与 `../../README.md`；章号与散文式引用未动。

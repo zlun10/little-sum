@@ -420,6 +420,38 @@ console=serial0,115200 root=PARTUUID=<分区> rootfstype=ext4 fsck.repair=yes ro
 
 
 
+### 「屏幕现在是不是不能用了」——①②④ 之后显示层的真实现状（`[板上实测]` 2026-10-19）
+
+一句话结论：**没有把屏关死，只是当前没有任何东西往屏上画。** 硬件与驱动通路完好，可逆；但 ② 保证屏上连字符都不会出现。
+
+| 层 | 板上读数 | 对「插上 HDMI 屏会看到什么」的影响 |
+|---|---|---|
+| ① 桌面 | `systemctl get-default` = `multi-user.target`；`systemctl is-enabled lightdm` 仍为 **`enabled`**（只是没有 target 拉它），`/usr/bin/labwc`、`/usr/bin/wayvnc` 都在盘上 | 不起桌面会话；单元文件与可执行文件一个没删 |
+| ② 控制台 | `/proc/cmdline` 无 `console=tty1`；`getty@tty1` = `disabled`+`inactive`；`cat /sys/class/vtconsole/vtcon*/name` → **只有 `(S) dummy device`** | **即使插了屏也是纯黑**：开机字符、登录提示一概不上屏 |
+| ③ DRM | **未做**：`vc4-kms-v3d` 仍在，`/dev/dri/card0` 在，`/sys/class/drm/card0-HDMI-A-1` 存在、`status=disconnected` | `disconnected` 是**当下没插线**，不是被关掉；插上后 KMS 仍会建模式 |
+| ④ 显存 | `gpu=16M`；`CmaTotal` 仍 **262144 kB（256 MB）**、`CmaFree` 259796 kB | **对真接屏出图的影响未实测**（本板全程无头，两组读数都没插过显示器），不编结论 |
+
+→ 三条可复用判据：
+
+- **屏上会不会有字符，看 `vtcon*/name`，不看 `lightdm` 的 enabled 状态。** 前者 `(S) dummy device` = 虚拟控制台没绑到任何帧缓冲，屏必然黑；后者只说明「开机时没有 target 拉它」，单元本身仍是使能的。
+- **`card0-HDMI-A-1 status=disconnected` 不等于「HDMI 已禁用」。** 真正的禁用是 `hdmi_ignore_hotplug=1` 或注释掉 `vc4-kms-v3d`（③），本板两条都没做。
+- **`gpu_mem=16` 没有缩掉 CMA 保留区**（改前改后 `CmaTotal` 都是 256 MB）。④ 砍的是固件侧 VCHI 服务，不是内核的连续内存池——别把「显存降了」推断成「显示相关保留内存全都降了」。
+
+想让屏重新有用（不新增改动，纯回退）：
+
+```bash
+sudo systemctl isolate graphical.target       # 当场拉起桌面，重启后仍回 multi-user
+sudo systemctl set-default graphical.target   # 开机就要桌面
+```
+
+屏上要字符或登录口（② 的回退，要重启）：
+
+```bash
+sudo cp /boot/firmware/cmdline.txt.bak /boot/firmware/cmdline.txt
+sudo systemctl enable getty@tty1
+sudo reboot
+```
+
 ### 显示侧验证
 
 ```bash
@@ -625,6 +657,7 @@ Pi 侧三个必查点：
 
 ## 变更记录
 
+- 2026-10-19（回答「屏幕现在是不是不能用了」）：「显示输出与无头模式」新增**「①②④ 之后显示层的真实现状」**一节。`[板上实测]` 结论是「**没关死，只是当前没人往屏上画**」：③ 未做所以 `card0-HDMI-A-1` 与 `/dev/dri/card0` 俱在（`status=disconnected` 只代表当下没插线），① 里 `lightdm` 单元本身仍 `enabled`、`labwc`/`wayvnc` 可执行文件都在盘上，② 才是让屏变黑的那一层——`vtcon*/name` 只剩 `(S) dummy device`。判据三条：屏上有没有字看 `vtcon` 不看 `is-enabled lightdm`；`disconnected` ≠ 已禁用 HDMI；**`gpu_mem=16` 没缩掉 `CmaTotal`（仍 256 MB）**，④ 砍的是固件侧 VCHI 不是内核连续内存池。**④ 对真接屏出图的影响仍未实测**，本板从头到尾没插过显示器。回退命令落到该节，未做任何新配置改动。
 - 2026-10-19（关屏 ④ 执行，本窗口经 SSH 三轮重启做 A/B）：新增**「④ 的执行实录」**。`config.txt` 追加 `gpu_mem=16`（备份 `.bak`）后重启——`get_mem` 回 `16M/998M`、`free` total **921 → 970**，③ 没做。**推翻本仓旧口径两处**：① 「④ 只在走完 ③ 之后才谈」不成立，KMS 开着照样能降到 16；② 「`gpu_mem` 在 KMS 下的最小允许值 `[待验证]`」就地升格为「16 可用」。**新查到的代价不在显示在 VCHI**：`gpu_mem=16` 时 `vc_sm_cma_vchi_init` 与 `bcm2835_mmal_vchiq` 报 `-22`、`/dev/video*` 13 个节点整个消失（默认那轮 0 条失败）——本板无相机故当下无感，要用 `rpicam-*`/libcamera 须抬回。方法账一条：本板 journald **非持久**，跨 boot 对照必须改前当场取。顺带照出 ① 的后遗症：`rpi-connect-wayvnc.service` 每 5 秒重试失败刷 `journalctl -p err`，未处理。
 - 2026-10-19（关屏 ①② 执行，本窗口经 SSH 执行）：「显示输出与无头模式」的关屏小节由**方案层升为已执行层**。① `set-default multi-user.target` ＋ `isolate` 当场实测 used 244 → 194（**50 MB，不是旧记的 249**——249 是桌面会话满开时的合计，执行前 wayvnc 已 `inactive`），残留的 portal/wireplumber 经 cgroup 判认为 SSH 自身的 user session；② `disable getty@tty1` ＋ 改写 `cmdline.txt`（删 `console=tty1`/`quiet splash`/`plymouth.ignore-serial-consoles`，逐 token `diff` 核过、仍一整行、`.bak` 留底），再起 `sudo reboot` 复验：新 cmdline 生效、`getty@tty1` `disabled`+`inactive`、串口 getty 仍 `active`、**① 重启后保住**、全新 boot used 136。同时撤回上一条里我自己写错的一句：文件原文是 `console=serial0,115200`，`/proc/cmdline` 显示 `ttyS0` 是设备树 alias 被内核解析，**不是冲突**（判据：比 cmdline 要成对读文件值与运行时值）。`vc4-kms-v3d` 未动（属 ③）。
 - 2026-10-19（分目录）：本篇由 `docs/pi/` 根移入 **`docs/pi/access/`**，跨分类的相对链接改为 `../<分类>/`，指向索引层改为 `../../README.md`；**章号与散文式引用（「`rpi-xxx.md` 第 N 节」）一条未动**——散文只认文件名，而文件名在全仓唯一。分类依据与机检见 `docs/README.md` 第一节。

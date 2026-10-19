@@ -1,5 +1,22 @@
 # 任务时间线
 
+## 2026-10-19（欠压定性）— 「一直有」被 45 次采样否掉；可达性探测必须写在本地，写进远程脚本等于没写
+
+- 决策（用户「1、做 2、给出具体 3、欠压还是有？上电开始有，还是一直有？」）：把「等板子回来再补读」从口头待办变成**动作**——后台看守每 20 秒探一次 `ssh pi true`，一通就跑采样；同时用连续采样而不是单次读数来回答「一直 vs 瞬时」。
+- 实测：15:30:53 仍 down、15:31:16 第 2 次探测即通。补读两件事——① 的落点 `lrwxrwxrwx … Oct 19 12:59 /etc/systemd/system/default.target -> /usr/lib/systemd/system/multi-user.target`（**链接时间戳＝执行 ① 的时刻**，手册那条 `[事实]` 就地升格 `[板上实测]`）；欠压 **45 次 × 2 秒全为 `0x50000`、拆位 bit0 恒 0**，采样时距 boot（14:39:01）已 **52 分钟**。
+- **根因（结论层面的纠正）**：本仓此前把它写成「**当下供电故障**」，措辞过头——`0x50000` 里 **bit0=0 恰恰说明读数那一刻没在欠压**，置的是锁存的 bit16/bit18。正确的说法是「**上电阶段的瞬时掉压，非持续**」：能证到的只有「事件发生在上电后头 46 秒内」（旧实测给的置位上限），稳定段 90 秒窗口一次都没抓到。→ **判据：判「当下」只看 bit0；判「一直」必须连续采样看 bit0 会不会跳，单次读数两样都判不了。`measure_volts`（ARM 核心电压）与 `dmesg` 计数（本板内核不报）都不算证据。**
+- **根因（我自己的执行错误）**：第一版看守脚本把「重试到可达」的循环写进了**远程脚本内部**，而远程脚本要有连接才会执行——外连第一次超时后整段就没跑过，白等一轮。可达性探测属于本地职责，必须留在本地循环里。
+- 本机取证一条（排掉一个候选）：失联期间固定 IP ping 100% 丢、`arp -a` **查不到任何树莓派 MAC**、`raspberrypi.local` 不解析 → **不是 DHCP 换址，是板子真没上网**；这条把「不可达根因」的候选集缩小，但仍未指向具体原因。
+- 未做：**重启后立刻 1Hz 采样**（要精确到第几秒置位、一次 boot 内几次），以及万用表量 5V 轨——两条都要用户在板边动手。
+
+## 2026-10-19（屏还能不能用）— 「屏黑」的元凶是 ② 不是 ①，而 `is-enabled lightdm` 至今仍是 `enabled`
+
+- 决策（用户「屏幕现在是不能用了？」）：**只做只读采集回答，不加任何新配置改动**——按本仓长期口径，对这块板的配置变更要先给分层方案等用户点档。采集命令：`/sys/class/drm/card0-*/status`、`grep Cma /proc/meminfo`、`/sys/class/vtconsole/vtcon*/name`、`systemctl is-enabled lightdm`、`ls /usr/bin/labwc /usr/bin/wayvnc`。
+- 实测：`card0-HDMI-A-1` = `disconnected`（**没插线，不是被禁用**）、`card0-Writeback-1` = `unknown`；`/dev/dri/card0` 与 `vc4-kms-v3d` 俱在（③ 未做）；`lightdm` 单元 = **`enabled`** 但默认 target 是 `multi-user`，`labwc`/`wayvnc` 两个可执行文件都还在盘上；`vtcon*/name` → **只有 `(S) dummy device`**；`gpu=16M`、`CmaTotal` **仍是 262144 kB**。
+- **根因（为什么容易答错）**：直觉会把「屏黑」归给 ①（关桌面），实际 ① 只是没人起 GUI，**真正让屏上连字符都不出现的是 ②**——`console=tty1` 已从 `cmdline.txt` 删除、`getty@tty1` = `disabled`，帧缓冲上没有任何 vtcon 绑定。→ **判据：问「屏上会不会有字」读 `vtcon*/name`，问「有没有 GUI」读 `get-default`；`systemctl is-enabled lightdm` 两边都不回答，它到现在还是 `enabled`。**
+- 顺带纠正一条容易顺推出口的错话：**`gpu_mem=16` 不等于「显示相关内存全降了」**——`CmaTotal` 改前改后都是 256 MB，④ 砍掉的是固件侧 VCHI 服务，不是内核连续内存池。同理 `card0-HDMI-A-1 status=disconnected` **不能当「HDMI 已禁用」的证据**，真禁用是 `hdmi_ignore_hotplug=1` 或注释 `vc4-kms-v3d`，本板两条都没做。
+- **仍未覆盖**：④ 对**真插显示器出图**的影响一组未测（本板从头到尾无头，`Cannot find any crtc or sizes` 在 76M 与 16M 两组都出现过，属未插屏现象，不能拿来当 `gpu_mem` 的判据）。回退路径已落文档：桌面＝`set-default graphical.target`；屏上字符＝`cp cmdline.txt.bak` ＋ `enable getty@tty1` ＋ 重启。
+
 ## 2026-10-19（关屏 ④）— 「④ 必须先走 ③」是本仓自己编的前置条件，实测不成立
 
 - 决策（用户「③具体内容给」→ 我给完 ③ 的内容并指出它当下无收益，用户回「4」）：**跳过 ③，直接做 ④**（`config.txt` 追加 `gpu_mem=16` ＋ 重启）。理由是当场读到的两条：`lsof /dev/dri/card0` 空（① 之后没人用 DRM，③ 关掉的是闲置驱动），而 ③ 的代价（`camera_auto_detect` 失效、boot 回退路径未验）是确定的。

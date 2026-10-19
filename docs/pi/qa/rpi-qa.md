@@ -49,7 +49,10 @@ A：行，本板实测可用；`rsync` 是否可用未验。详见 `rpi-ssh.md` 
 A：六条命令定生死——`uptime`、`vcgencmd get_throttled`、`measure_temp`、`free -m`、`df -h /`、`systemctl --failed`，任何一步异常就停在那里。详见 `rpi-status.md` 第二节。
 
 **Q：`get_throttled=0x50000` 是当下欠压还是历史记录？**
-A：高位锁存、只有重启清零，所以非零本身分不清；本板重启后约 46 秒空载即重新锁存同一值，判为**当下供电故障**。详见 `rpi-3b-hardware.md` §4.1。
+A：先拆位再说——bit16（`0x10000`）＝本 boot 内**发生过**欠压、bit18＝发生过降频，而 **bit0=0 表示读数那一刻没在欠压**。高位锁存、只有重启清零，所以**单次读数分不清历史还是当下**。本板重启后约 46 秒空载即重新锁存同一值 → 判为**供电本身在瞬时掉电**（不是纯历史遗留），但「瞬时」不等于「一直」，见下一条。
+
+**Q：欠压是一直有，还是上电那一下？**
+A：**上电阶段那一下**，`[板上实测]` 2026-10-19：boot 后 52 分钟起连续 **45 次 × 2 秒**采样，45 次全是 `0x50000`、**bit0 恒 0** —— 稳定运行段没有任何一次正在欠压。能证到的只有「事件发生在上电后头 46 秒之内（旧实测的置位时间上限）」，**要精确到第几秒、要数出几次，得重启后立刻 1Hz 采样，未做**。→ 判据：分辨「持续 vs 瞬时」只能靠**连续采样看 bit0 会不会跳**，`measure_volts`（那是 ARM 核心电压）与 `dmesg` 计数（本板内核不报）两条都判不了。详见 `rpi-3b-hardware.md` §4.1。
 
 **Q：`measure_volts` 读到 1.27V，是不是适配器不行？**
 A：不是，那是 ARM 核心电压不是 5V 轨，不能用它排除适配器问题。
@@ -88,11 +91,20 @@ A：按「常驻还是临时、要不要事件、要不要微秒级」选，速�
 
 ## 五、无头与显示
 
+**Q：屏幕现在是不是不能用了？**
+A：不是。**没有任何一层关掉了 HDMI 通路**——③ 没做，`vc4-kms-v3d` 与 `/dev/dri/card0` 都在，`card0-HDMI-A-1` 现在的 `disconnected` 只代表此刻没插线。真正让屏变黑的是 ②：`console=tty1` 已从 `cmdline.txt` 删掉、`getty@tty1` = `disabled`，所以**插上屏也是纯黑，连开机字符都不会有**。① 只停桌面（`lightdm` 单元本身仍 `enabled`，一条 `isolate graphical.target` 就能拉起来，但没 target 拉它就不起）。④ `gpu_mem=16` 对真接屏出图的影响**未实测**，本板从头到尾没插过显示器。要恢复：屏上有字符＝`sudo cp /boot/firmware/cmdline.txt.bak /boot/firmware/cmdline.txt` ＋ `sudo systemctl enable getty@tty1` ＋ 重启；要桌面＝`sudo systemctl set-default graphical.target`。四层读数与判据见 `rpi-network.md`「①②④ 之后显示层的真实现状」。
+
+**Q：怎么一眼判断「屏上到底会不会有字」？**
+A：`cat /sys/class/vtconsole/vtcon*/name`。本板现在只有 `(S) dummy device` ＝ 虚拟控制台没绑到任何帧缓冲，屏必然黑。别用 `systemctl is-enabled lightdm` 判——它到现在还是 `enabled`，和屏黑不黑无关。
+
 **Q：想把屏幕那份资源去掉、只用串口，怎么办？**
 A：改顶层一个开关就够——`sudo systemctl set-default multi-user.target` ＋ `sudo systemctl isolate multi-user.target`（后者当场生效，不用重启），下面的 `lightdm → labwc` 依赖链一起塌。**本板 2026-10-19 已执行，实测省 50 MB（used 244 → 194）**，不是旧记录那个 249 MB——249 是自动登录桌面会话全开时的数，本轮 wayvnc 本来就 `inactive`。四档方案与执行实录见 `rpi-network.md`「显示输出与无头模式」。
 
 **Q：关屏之前必须先确认什么？**
 A：串口 getty 在跑（本板 `serial-getty@ttyS0` = `active`），否则关掉唯一控制台就没有控制台。详见 `rpi-status.md` 第七节。
+
+**Q：所谓「去除屏幕资源」是靠某个配置项做到的吗？**
+A：不是，是四层各自在不同的地方，本板动了三层。① 一条 systemd 命令 `set-default multi-user.target`——**不在 boot 分区**，改的是 systemd 的默认 target（下次开机起哪个 target），让 `lightdm → labwc → wayvnc` 整条链没人拉起（实得 50 MB）；`[事实]` systemd 手册原文是「sets (symlinks) the `default.target` alias to the given target unit」；`[板上实测]` 2026-10-19 已确认落点就是 `/etc/systemd/system/default.target -> /usr/lib/systemd/system/multi-user.target`，且链接时间戳（`Oct 19 12:59`）等于执行 ① 的时刻；② `/boot/firmware/cmdline.txt` 删 `console=tty1`/`quiet splash`/`plymouth.ignore-serial-consoles` ＋ `disable getty@tty1`（**0 MB**，买的是屏上不再出控制台）；④ `/boot/firmware/config.txt` 末行 `gpu_mem=16`（76M→16M，**+49 MB**，代价见下面的 VCHI 条）。③ 才是「真去掉显示驱动」那一项——`config.txt` 里的 `dtoverlay=vc4-kms-v3d` ＋ `max_framebuffers=2`，本板**没做**。→ 判据：**能叫「配置项」的只有 `gpu_mem` 与 `vc4-kms-v3d` 两条，而省内存最多的那条（①）根本不是配置项**；听到「关屏」先问要关的是桌面／控制台／驱动／显存哪一层，四层的可逆性与代价完全不同。
 
 **Q：关了屏还能用 wayvnc 看桌面吗？**
 A：不能，wayvnc 挂在桌面栈上，随第一档一起消失——这是四档里唯一不可自动恢复的便利。**另有一条 ① 的后遗症**：`rpi-connect` 还在每 5 秒拉一次 `rpi-connect-wayvnc.service` 并失败，`journalctl -p err` 会刷屏；系统层没坏，要清得 mask 那个 user unit（本仓未处理）。
@@ -169,5 +181,8 @@ A：本仓长期裁定，推送逐次授权；协作约定而非板子事实，�
 
 ## 变更记录
 
+- 2026-10-19（欠压采样与 ① 落点补测）：第三节改写「`0x50000` 是当下还是历史」一条（先拆位再结论，并撤回「一直有」这种读法），新增「欠压是一直有还是上电那一下」——45 次 × 2 秒、bit0 恒 0，判为**上电阶段的瞬时掉压、非持续**；第五节把 `set-default` 落点由 `[事实]+[待板上复验]` 升为 `[板上实测]`（`/etc/systemd/system/default.target` → `multi-user.target`，链接时间戳＝执行 ① 的时刻）。
+- 2026-10-19（「靠哪个配置项」）：第五节新增一条——「去除屏幕资源」不是一个开关，四层各自落在不同地方；能叫配置项的只有 `gpu_mem`（④）与 `vc4-kms-v3d`（③，未做），而省内存最多的 ① 是 systemd 命令、不落 boot 分区。
+- 2026-10-19（「屏还能不能用」）：第五节新增两条——用户原话「屏幕现在是不能用了？」的结论（没关死：③ 未做、`disconnected` 只是没插线；黑屏来自 ②；④ 影响未测；两条回退路径），以及「一眼判断屏上有没有字」用 `vtcon*/name` 而不是 `is-enabled lightdm`。
 - 2026-10-19（②④ 执行后续档）：第五节补 ② 的重启判据、`cmdline.txt` 一整行的坑、④ 的 `gpu_mem=16` 实测与 VCHI 代价、journald 非持久导致的 A/B 约束、wayvnc 每 5 秒重试这条 ① 的后遗症，以及「现在走到第几档」的现状条目。
 - 2026-10-19（成文）：新建问答篇，收录本轮 `[板上实测]` 期间用户实际问过的问题与当场结论；形态（一条一问一答、不写表）同时写进索引层第六节第 9 条并加机检。
