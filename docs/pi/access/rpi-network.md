@@ -152,7 +152,7 @@
 ## 排障顺序
 | 步 | 问什么 | 命令与判读 |
 | --- | --- | --- |
-| 0／1 | 系统在不在跑／链路层 | 按顺序定位，每步都有明确判据，不要跳。**0**：接串口看有没有滚动到登录提示符——分清「系统没起来/卡在服务」与「系统活着但网络不通」，是后面所有步骤的前提；串口本身没输出回「串口排障」；没有 USB-TTL 模块时跳过本步。**1**：主通道 WiFi 先 `sudo iw dev wlan0 link` 判 `Connected` 并看 `signal`/`frequency`；走有线才 `ip link show eth0` 看 `NO-CARRIER`、`sudo ethtool eth0 \| grep -i link` 判 `Link detected: yes`。`[板上实测]` 2026-10-19 这两条都要带 `sudo`（`iw`/`ethtool` 在 `/usr/sbin`）；本板 `sudo ethtool eth0` → `Link detected: no`、`Speed: Unknown!`＝**网线没插**，有线侧带宽结论仍属未验。这一层不过，后面全部无意义 |
+| 0／1 | 系统在不在跑／链路层 | 按顺序定位，每步都有明确判据，不要跳。**0**：接串口看有没有滚动到登录提示符——分清「系统没起来/卡在服务」与「系统活着但网络不通」，是后面所有步骤的前提；串口本身没输出回「串口排障」；没有 USB-TTL 模块时跳过本步。**1**：主通道 WiFi 先 `sudo iw dev wlan0 link` 判 `Connected` 并看 `signal`/`frequency`；走有线才 `ip link show eth0` 看 `NO-CARRIER`、`sudo ethtool eth0 \| grep -i link` 判 `Link detected: yes`。`[板上实测]` 2026-10-19 这两条都要带 `sudo`（`iw`/`ethtool` 在 `/usr/sbin`）；本板 `sudo ethtool eth0` → `Link detected: no`、`Speed: Unknown!`＝**网线没插**，有线侧带宽结论仍属未验。这一层不过，后面全部无意义。**第 0 步的首次真实使用（`[对端实测]` 2026-10-19 17:43）**：又整体不可达——固定址 ping 3/3 全丢、TCP 22 连续三条超时，而本机外网正常（ping 223.5.5.5 有回）；此时电脑侧 COM9 发一个 CR，**两次都回干净登录提示符** → **系统在跑、`serial-getty@ttyS0` 在**，故障当场定在网络层，不是「起不来」，于是「找显示器／重启板子／查服务」整支都不用走。同一时刻本机 `arp -a` 里那个地址**只剩静态残留、没有 MAC** → 板子连 ARP 都没应答，再次排除「DHCP 换了地址」这一支。⚠️ 提示符里带主机名，外发前按索引层第五节处理 |
 | 2／3 | 地址／路由 | **2** `ip -4 a`：WiFi 正常应拿到路由器网段（如 `192.168.1.x`）；eth0 直连场景才有 `10.99.`（静态）、`192.168.137.`（ICS DHCP）、`169.254.`（link-local）；全无＝取址失败，查 `journalctl -u NetworkManager --no-pager \| tail -40`。**3** `ip route` 应有一条 `default via <路由器或ICS地址> dev wlan0` 或 `dev eth0`；`ip route get 10.99.0.1` 回 `dev eth0` 且不含 `via` |
 | 4／5 | 服务／出网 | **4** `ss -tlnp 'sport = :22'`；`systemctl is-active ssh`。**5** 先 `ping -c 2 223.5.5.5`（绕 DNS 测纯 IP 通路），再 `getent hosts archive.raspberrypi.org`（只测 DNS）——两者分离才能判断是路由坏了还是解析坏了 |
 
@@ -186,6 +186,7 @@
 
 ## 变更记录
 
+- 2026-10-19（第 0 步首次真实使用）：「排障顺序」第 0 步补一条 `[对端实测]`——不可达期间串口仍回登录提示符，当场把故障定在网络层、排除「系统没起来」；本机 ARP 无对端 MAC，再排「换址」一支。
 - 2026-10-19（查表化）：整篇重写为表为主——长段解释删除（复盘靠 `.ai/timeline.md` 与 git 记录回溯），判据、命令、参数、单位、失败表现、鉴别顺序全部压进表格；章名与章序未动；档位只随内容走、未升格；「SSH 服务端」旧句「本板属哪边仍未实测」按同日首轮基线改口；WiFi、显示、串口各节内多个 `###` 小节与说明段压成表行（小题名保留在行首标签，含原「使能与内核输出」小节）；ttyd 的 systemd unit 由代码块压成表行。
 - 2026-10-19（内核通道实测）：新增 `[对端实测]`——`<0>` 出／`<6>` 被挡／抬 7 后出三条对照，内核消息走串口是通的，挡住的是 `printk` console_loglevel（默认 3）；排障表加「能登录但看不到内核消息」行与 `dmesg -n 7`／`-n 3` 改法。
 - 2026-10-19（串口接通，同日第二轮）：`[对端实测]`——三根线接 pin 8/10/6、115200 8N1 Flow=None，COM9 发 CR 即回 `<主机名> login:`；mini-UART 漂移定性「机制在、空载未复现、负载下未测」，不照它改 config；`console=serial0` 条仅登录提示符半句升 `[对端实测]`；「完全无反应」改指 `rpi-ssh.md` 第八节枚举判据；登录提示符带主机名、外发按索引层第五节处理。
