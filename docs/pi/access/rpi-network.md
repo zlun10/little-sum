@@ -358,9 +358,32 @@ systemctl get-default                        # 下次开机进哪个目标
 
 - **为什么只有 50 MB 而不是 249 MB**：上面那次 249 MB 的量是**自动登录桌面会话全开时**的数（labwc + panel + pcmanfm + portal + wayvnc 一整串）。本轮执行前 `systemctl is-active wayvnc wayvnc-control` 已经是 **`inactive`**、HDMI 的 `/sys/class/drm/card0-*/status` 是 `disconnected`，也就是桌面链本来就没跑满；① 关掉的是 `lightdm` 那一层，拿到的就是那一层的量。**教训：省多少要先看当下谁在跑，不能引用上一次满桌面时的数。**
 - **剩下的三笔省不到，而且不该省**：`wireplumber` 23 MB、`xdg-desktop-portal` 15.6 MB、`rpi-connectd` 11.9 MB 仍在，`cut -d: -f3 /proc/<pid>/cgroup` 显示它们全挂在 `/user.slice/user-1000.slice/user@1000.service/…`——**是这次 SSH 登录自身拉起的 user session**，与 `graphical.target` 无关。要清它们得 mask user units，代价是音频与 portal 没，且下次图形登录还得改回，不划算。→ **判据：`ps` 里的残留要先认 cgroup 再决定关不关，别一律当桌面残留。**
-- **一条要纠正的正文写法**：本节 ② 原来写「只留 `console=serial0,115200`」，本板 `/proc/cmdline` 实际是 **`console=ttyS0,115200 console=tty1`**（不是 `serial0`），另带 `quiet splash`、`plymouth.ignore-serial-consoles` 和 `cfg80211.ieee80211_regdom=CN`（国家码已由 raspi-config 写进内核命令行，WiFi 那节的 `[待验证]` 在此有落点）。真要做 ② 时按 **`ttyS0`** 这个实际字符串改，别照抄 `serial0`。
+- **一条实测纠正（推翻我上一版正文）**：`cmdline.txt` 文件里**原文就是 `console=serial0,115200`**，而 `/proc/cmdline` 显示的是 **`console=ttyS0,115200`**——`serial0` 是固件写进设备树的 alias，内核按 alias 解析成实际端口（本板 `tr -d '\0' < /proc/device-tree/aliases/serial0` → **`/soc/serial@7e215040`** = mini UART，`serial1` → `7e201000` = 全功能 UART；`/dev/serial0 -> ttyS0`），所以**两个字符串都出现、指同一设备，不矛盾**。上一版正文据 `/proc/cmdline` 断言「文件不是 `serial0`」是错的：读的是运行时视图不是源文件。→ **判据：比内核命令行要「文件值」与 `/proc` 值成对读，只读一边必然得出假冲突，而且它会以「实测纠正」的名义盖掉原本正确的正文。** 驱动侧把 alias 绑成 `ttyS0` 的具体代码路径未查，本仓只记录这条观察到的对应关系。
+- 本板 cmdline 还带 `cfg80211.ieee80211_regdom=CN`（国家码由 raspi-config 写进内核命令行，WiFi 那节的 `[待验证]` 在此有落点）。
 - **回退（一条命令，不需要重启）**：`sudo systemctl set-default graphical.target && sudo systemctl isolate graphical.target`。**重启后的持久性未验**（`get-default` 已经落在 `multi-user.target`，符号链接本身就是下次开机的依据，但本板欠压未修，这次没专门重启复验）。
-- `getty@tty1` 仍 `enabled` 且 `active`——那是 ② 的范围，本轮按用户定点没动。
+- `getty@tty1` 当时仍 `enabled` 且 `active`——那是 ② 的范围，见下一节。
+
+### ② 的执行实录：配置已改，等一次重启才生效（`[板上实测]` 2026-10-19，经 SSH 执行）
+
+用户点「做」，并问是否要重启。答案是**要**：`cmdline.txt` 只在 boot 阶段由固件读一次，`disable getty@tty1` 只摘掉下次开机的 `wants` 链接、当前那个 `getty@tty1` 实例仍在跑。所以本轮只落配置、不重启，重启时机由用户定（这块板欠压未修，每次重启都顺带复验一次 ① 的持久性）。
+
+| 动作 | 命令 | 当场结果 |
+|---|---|---|
+| 备份原文件 | `sudo cp /boot/firmware/cmdline.txt{,.bak}` | `.bak` 176 字节，与原文件一致 |
+| 改写 cmdline | 保留其余参数，删 `console=tty1`、`quiet splash`、`plymouth.ignore-serial-consoles` | 新文件 **118 字节、仍是 1 行、行尾无换行**（`wc -l` = 0 与备份同） |
+| 逐 token 核差异 | `diff <(tr ' ' '\n' < .bak) <(tr ' ' '\n' < cmdline.txt)` | **只少了这 3 个 token**，`console=serial0,115200` 与 root/rootfstype/fsck/rootwait/regdom 全部原样 |
+| 关 tty1 登录口 | `sudo systemctl disable getty@tty1` | `Removed '…/getty.target.wants/getty@tty1.service'`，`is-enabled` → `disabled` |
+
+改后的整行（**必须是一整行，换行＝内核参数解析失败直接起不来**）：
+
+```
+console=serial0,115200 root=PARTUUID=<分区> rootfstype=ext4 fsck.repair=yes rootwait cfg80211.ieee80211_regdom=CN
+```
+
+- **为什么 ② 排在 ③ 前面**：③ 要注释 `vc4-kms-v3d`，改坏时唯一救援入口是串口 getty；② 先把「输出只从串口走」变成确定事实，③ 的风险才可接受。本板 `serial-getty@ttyS0` 全程 `active`，SSH 未断。
+- **② 省不了内存**：买的是「tty1 上没有可登录入口 + 启动日志全走串口」这条一致性；资源收益已经在 ① 拿掉了。
+- **回退（同样要重启才完全回退）**：`sudo cp /boot/firmware/cmdline.txt.bak /boot/firmware/cmdline.txt && sudo systemctl enable getty@tty1`。
+- **重启后要复验的四条**（也是 ① 的持久性复验）：`cat /proc/cmdline`（应无 `tty1`/`quiet`/`splash`，且 `serial0` 显示为 `ttyS0`）、`systemctl get-default` 仍 `multi-user.target`、`systemctl is-active serial-getty@ttyS0` 仍 `active`、`vcgencmd get_throttled`。**未复验前，本节全部按「配置已就位、生效未证」读。**
 
 ### 显示侧验证
 

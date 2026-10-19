@@ -1,5 +1,12 @@
 # 任务时间线
 
+## 2026-10-19（关屏 ② 落配置）— 我上一版那条「纠正」本身是错的：文件写 serial0、`/proc` 显示 ttyS0
+
+- 决策（用户「2、做，需要我重启？」）：执行 ② 的**配置改动**（`disable getty@tty1` ＋ 改写 `cmdline.txt` 删 `console=tty1`/`quiet splash`/`plymouth.ignore-serial-consoles`），**不替他重启**——`cmdline.txt` 只在 boot 阶段由固件读一次，必须重启才生效，而这块板欠压未修、每次重启都有成本，时机归他。
+- 实测：备份 176 字节 → 新文件 118 字节、`wc -l` 仍 0（**一整行、行尾无换行**，与原文件同形）；`diff <(tr ' ' '\n' < 旧) <(tr ' ' '\n' < 新)` 显示**只少这 3 个 token**，`root=PARTUUID=…`/`rootfstype`/`fsck.repair`/`rootwait`/`cfg80211…regdom=CN` 全部原样。`disable` 只 `Removed '…/getty.target.wants/getty@tty1.service'`，当前那个 getty 实例仍在跑。SSH 与 `serial-getty@ttyS0` 全程 `active`。
+- **根因（我为什么写错）**：上一轮我读的是 `/proc/cmdline`（`console=ttyS0,115200`），就断言「文件里不是 `serial0`，别照抄」——**把运行时视图当成了源文件**。本轮 `cat` 文件，原文确实是 `console=serial0,115200`：`serial0` 是 `config.txt` 侧的别名，boot 时被翻译成实际端口。→ **教训：比内核命令行必须成对读「文件值」与 `/proc` 值，只读一边必然产出一条假冲突，而且它会以「实测纠正」的名义盖掉原本正确的正文。** 这条已写进 `rpi-network.md` 的 ② 节与 QA。
+- 附带（仍成立的旧结论）：② 省不了内存，买的是「所有输出只从串口走、tty1 没有登录口」这条确定性；正因为它把救援通道先钉死，② 必须排在 ③（注释 `vc4-kms-v3d`）前面做。
+
 ## 2026-10-19（关屏 ① 执行）— 省到的是 50 MB 不是 249 MB：满桌面的数被当成了关屏收益
 
 - 决策（用户「现在开始解决怎么关闭屏幕资源的方式」，四档里点 ①）：只走 `sudo systemctl set-default multi-user.target` ＋ `isolate`，**不碰 boot 分区、不重启**——这块板欠压未修，每一次重启都要记成本，而 `isolate` 已能当场验证效果，持久性依据是 `default.target` 符号链接本身。
