@@ -1,5 +1,24 @@
 # 任务时间线
 
+## 2026-10-19（关屏 ① 执行）— 省到的是 50 MB 不是 249 MB：满桌面的数被当成了关屏收益
+
+- 决策（用户「现在开始解决怎么关闭屏幕资源的方式」，四档里点 ①）：只走 `sudo systemctl set-default multi-user.target` ＋ `isolate`，**不碰 boot 分区、不重启**——这块板欠压未修，每一次重启都要记成本，而 `isolate` 已能当场验证效果，持久性依据是 `default.target` 符号链接本身。
+- 实测：used **244 → 194 MB（50 MB）**，`get-default` → `multi-user.target`，`is-active lightdm graphical.target` 双双 `inactive`，`pgrep labwc|wayvnc|lightdm` 空；`ssh` 与 `serial-getty@ttyS0` 全程 active（isolate 没打断这次 SSH 会话，串口入口没动）。
+- 根因（为什么和旧记录的 249 MB 差这么多）：**249 MB 是「自动登录桌面会话全开」那一整串（labwc + wf-panel + pcmanfm + 三个 portal + wayvnc）的 RSS 合计，而本轮执行前 `wayvnc`/`wayvnc-control` 已经是 `inactive`、HDMI `status=disconnected`**——桌面链本来就没跑满，① 关掉的只有 `lightdm` 那一层。**教训：「关某层能省多少」必须在关之前当场读一次谁在跑，不能引用另一次满负载时的数；两个数都真，但条件不同。**
+- 根因（切完还剩 portal/wireplumber 的归因，这条改变了处置）：`cut -d: -f3 /proc/<pid>/cgroup` 显示 `wireplumber`(23MB)/`xdg-desktop-portal`(15.6MB)/`rpi-connectd`(11.9MB) 全在 `/user.slice/user-1000.slice/user@1000.service/…`——是**这次 SSH 登录自己拉起的 user session**，与 `graphical.target` 无关。**判据：`ps` 里的残留先认 cgroup 再决定关不关，别一律当桌面残留；要清它们得 mask user units，代价是音频与 portal 没，不划算。**
+- 纠正一处正文写法：本文档原先把 ② 的目标写成「`cmdline.txt` 只留 `console=serial0,115200`」，本板 `/proc/cmdline` 实际是 **`console=ttyS0,115200 console=tty1`**（另带 `quiet splash`、`plymouth.ignore-serial-consoles`、`cfg80211.ieee80211_regdom=CN`）。→ 真做 ② 要按 `ttyS0` 这个实际串改，别照抄 `serial0`；顺带落定一条 WiFi 节的旧 `[待验证]`：**国家码已由 raspi-config 写进内核命令行**。
+- 未做（明确留着的）：② `getty@tty1` 仍 `enabled`+`active`；③ `dtoverlay=vc4-kms-v3d` 未注释；重启后持久性未复验。回退一条命令：`sudo systemctl set-default graphical.target && sudo systemctl isolate graphical.target`。
+
+## 2026-10-19（查表化）— 六篇重写为表为主、新增问答层：解释为什么不留正文
+
+- 决策（用户「将文件不要做篇幅很大，细节很多的样子。做成类似快速查表的那种。还有，新建一个文件来记录 QA」）：范围**全部六篇**；长段解释（根因、误判复盘、手册未述的推理）**删掉，靠 `.ai/timeline.md` 回溯**；问答独立成 `docs/pi/qa/rpi-qa.md`，一条一问一答，**不承载规格**。
+- 决策（问答为什么单独一层而不是并进各篇）：QA 的主语是「用户问过什么」，与 `hardware/gpio/access` 的「读它的人要做什么」这条轴**正交**——并进去会让同一条结论在规格表和问答里各存一份，改一处漏一处。索引层因此从三层升为四层（索引／主干／专章／问答），但层次仍**只由索引层的表表达**，`qa/` 只是第四个分类目录。
+- 落地形态（可机检，见断言 11/12）：主干与专章**单篇 ≤220 行且 `^|` 表行占比 ≥35%**；问答篇 `^\*\*Q：` 行数 == `^A：` 行数且 ≥1、**不得出现表行**。`docs/pi/qa/` 不套行数与占比那条（问答本来就是一行一问，表行占比天然为 0）。
+- 根因（改写时的硬约束，为什么章名一个字没动）：跨篇引用**同时**存在两种形态——「`rpi-xxx.md` 第 N 节／§4.1」和「」段名（`grep -rhoE "「[^」]{2,24}」"` 计数最高的是「镜像与默认账户基线」5 次、「排障顺序」5 次、「显示输出与无头模式」4 次、「仍需上板实测」4 次）。所以本轮**只压正文、章号与章名全部冻结**，包括 `2.1`/`4.1` 这类子号。**教训：结构压写的代价不在本篇内部，在别篇的引用串；先枚举入站引用再决定能不能动标题。**
+- 取舍（`rpi-ssh.md` 269→220 行怎么压的）：靠**并表**不靠删事实——第一节 16 行并成 9 行、第三节档位三行并一行、第七节 scp 代码块折进表行。config 块、主机键指纹基准 `SHA256:5uZ…`、判真命令 `ssh -o PasswordAuthentication=no pi 'echo ok'`、PATH 四行对比**逐字保留**，因为它们是「要手打／要比对」的物体，不是解释。
+- 已知违规（未覆盖范围，不是回归）：`rpi-network.md` 574 行、`rpi-gpio-pinout.md` 707 行仍是旧篇幅，`check-agents.sh` 因此退出码 1。后者带 40 针表（约 42 行），压到 220 行要贴着上限走；本轮已把「上限抬到 260」作为备选留给用户定。
+- 决策（变更记录口径同时改）：每条**一行**（日期＋短句），根因与复盘一律进 `timeline.md`；这替代了此前「只加不减」在变更记录内的含义——条目仍不删，只是压成一行。
+
 ## 2026-10-19（收尾）— 本轮改动按主题分六次提交，粒度停在文件级
 
 - 决策（用户「逐步提交修改」）：一轮工作拆成六次提交，分组轴是**主题**不是目录——① 新增专章 `rpi-status.md`、② 五篇移入三个分类目录、③ 新增索引层 `docs/README.md`、④ 根 `README.md` 入口、⑤ `AGENTS.md` 退役＋校验脚本重写、⑥ `.ai/` 记录。仍不推送（`main` 不推送属长期裁定）。
