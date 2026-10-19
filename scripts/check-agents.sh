@@ -4,7 +4,7 @@
 #     1 仓库根只留四个入口文件：README.md AGENTS.md CLAUDE.md QODER.md
 #     2 .ai/ 只留 current.md 与 timeline.md，且不存在游离的 .ai/current-*.md
 #     3 派单信箱已废：.ai/dispatch/ 若重新出现即违规
-#     3.5 分类目录：docs/pi/ 根下不得直接放 .md（必须进 hardware/gpio/access）、
+#     3.5 分类目录：docs/pi/ 根下不得直接放 .md（必须进 hardware/gpio/access/qa）、
 #         分类目录不得为空、docs/ 下除 README.md 与 pi/ 之外不放东西
 #   结构（docs/pi/<分类>/ 下每篇）
 #     4 代码围栏 ``` 成对（后续断言靠它切正文）
@@ -16,6 +16,9 @@
 #     9 markdown 相对链接的目标文件存在——只取正文（跳过代码围栏与行内代码），
 #       散文里用行内代码写出的 `](./x.md)` 形态属示例，不算引用；已删除的历史源稿不写成链接
 #    10 索引层 docs/README.md 存在，且每篇都在里面被命名（名单由文件系统推导，加新篇不改脚本）
+#  形态（查表优先，docs/README.md 第六节第 8、9 条）
+#    11 主干与专章：单篇 ≤ 220 行，且 `|` 开头的表行占全篇 ≥ 35%（pi/qa/ 不套此条）
+#    12 问答篇 pi/qa/：`**Q：` 行数 = `A：` 行数且 ≥ 1，且不写表
 set -u
 
 fail=0
@@ -163,6 +166,41 @@ EOF_TOC
   done <<EOF_LINK
 $links
 EOF_LINK
+done
+
+# ---------- 11 查表形态：行数上限 + 表行占比 ----------
+MAX_LINES=220
+MIN_TABLE_PCT=35
+for f in docs/pi/*/*.md; do
+  [ -f "$f" ] || continue
+  case "$f" in docs/pi/qa/*) continue ;; esac
+  base=$(basename "$f")
+  total=$(wc -l < "$f" | tr -d ' ')
+  tbl=$(grep -c '^|' "$f")
+  if [ "$total" -gt "$MAX_LINES" ]; then
+    report FAIL "$base：$total 行 > 单篇上限 $MAX_LINES（查表化：细节应压进表或进 .ai/timeline.md）"
+  fi
+  [ "$total" -gt 0 ] || total=1
+  pct=$(( tbl * 100 / total ))
+  if [ "$pct" -lt "$MIN_TABLE_PCT" ]; then
+    report FAIL "$base：表行占比 ${pct}%（$tbl/$total）< 下限 ${MIN_TABLE_PCT}%，正文应以表为主"
+  fi
+done
+
+# ---------- 12 问答篇形态 ----------
+for f in docs/pi/qa/*.md; do
+  [ -f "$f" ] || continue
+  base=$(basename "$f")
+  qn=$(grep -c '^\*\*Q：' "$f")
+  an=$(grep -c '^A：' "$f")
+  if [ "$qn" = 0 ]; then
+    report FAIL "$base：问答篇一条问答都没有（\`**Q：\` 起行）"
+  elif [ "$qn" != "$an" ]; then
+    report FAIL "$base：$qn 条问、$an 条答，数量不等（一条问答 = 一行 Q + 一行 A）"
+  fi
+  if grep -q '^|' "$f"; then
+    report FAIL "$base：问答篇不写表，表格内容应写进主干／专章并由答案指向"
+  fi
 done
 
 # 根 README 与索引层自己的链接
