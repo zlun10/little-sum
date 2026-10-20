@@ -62,6 +62,15 @@ A：跑失败归属表那一条命令按退出码判读。详见 `rpi-ssh.md` �
 **Q：传目录用 `scp -r` 行不行？**
 A：行，本板实测可用；`rsync` 是否可用未验。详见 `rpi-ssh.md` 第七节。
 
+**Q：串口登录要人手打口令，怎么把它变成能自动执行的通道？**
+A：2026-10-20 实测可行，一个电脑侧脚本就够：用 `System.IO.Ports.SerialPort` 独占那个 COM，先发一个 CR，然后按回显分支——看到 `login:` 发账户名、看到 `assword` 发口令、**只有匹配到 shell 提示符（`[\$#]` 结尾）才发命令**，末尾挂一个 `; echo PI''END` 当完成标记（裸行 `PIEND` 出现即结束，被打字回显的那一行里有引号、不会误判）。凭据从本机一个不入库的文件读（第 1 行账户、第 2 行口令，例如 `%USERPROFILE%\.pi-serial-secret`，用户自己建），脚本只取长度不回显内容；**脚本与凭据都不进仓库**，TEMP 里的副本会被清，要长期用就放自己的目录。实测代价与坑：第一版没先探测提示符，命令被 `login:` 当用户名吃掉一次（`Login incorrect`）→ 相位判断必须有。这条通道打通后排障第 0 步从「只看提示符」升级为「不可达期间能进系统取日志并恢复」。
+
+**Q：`/dev/ttyAMA0` 不存在、`dmesg` 里又有 `hci_uart_bcm serial0-0`，我的控制台到底在哪片 UART 上？**
+A：两块控制器、两个同名 `serial0`，不是矛盾：**DT 别名 `serial0` 指 PL011，它被蓝牙吃了**（`hci_uart_bcm serial0-0` 就是它，所以 `/dev/ttyAMA0` 干脆没有节点）；**udev 的 `/dev/serial0` 是个符号链接，本板指向 `ttyS0`＝mini-UART**（`readlink /sys/class/tty/ttyS0/device` → `3f215040.serial`），内核 `console=ttyS0,115200` 也落在它上面。判据三条命令：`ls -l /dev/serial0`、`readlink /sys/class/tty/ttyS0/device`、`grep console= /proc/cmdline`。推论：想在 3B 上把 PL011 当控制台得先 `dtoverlay=disable-bt` 把蓝牙摘掉（本板**没做**，也仍未实测叠加行为），现在这条通道走的是 mini-UART——所以它受 core 时钟漂移影响（见「串口到底通没通」与主干 mini-UART 行），而 PL011 不受。
+
+**Q：三片同型号 CH343 都插着，COM 号能当身份用吗？**
+A：不能。`[对端实测]` 2026-10-20 三片同时枚举为 `COM9`/`COM19`/`COM22`（`Get-CimInstance Win32_PnPEntity` 里名字都是 `USB-Enhanced-SERIAL CH343 (COMn)`）——名字完全一样、COM 号随插拔与枚举顺序变。要固定只有两条：把** DeviceID 里的 USB 序列号**记在本机（属设备指纹，按索引层第五节**不入库**），或给三片贴物理标签、并规定只插同一个物理 USB 口。判片在不在位用 `COM\d` 清单，判**物理层通不通**要靠它会不会重新枚举（换线换口才变），细节见 [`rpi-ssh.md`](../access/rpi-ssh.md) 第八节。
+
 ## 三、状态与供电
 
 **Q：怎么一眼看这块板健不健康？**
@@ -203,6 +212,7 @@ A：本仓长期裁定，推送逐次授权；协作约定而非板子事实，�
 
 ## 变更记录
 
+- 2026-10-20（串口自动化）：第二节新增三问——串口怎么变成可自动执行的通道（含凭据不入库口径）、`/dev/ttyAMA0` 为什么不存在与两个同名 `serial0`、三片同型号模块的 COM 号不能当身份。
 - 2026-10-19（不可达根因裁定）：第五节新增「WiFi 整体不可达、除了等自愈还有别的办法吗」一问——`nmcli connection up` 当场恢复，`no-secrets` 停摆是时长来源；细节本体归 [`rpi-network.md`](../access/rpi-network.md)。
 
 - 2026-10-19（内核通道实测）：第二节新增「串口能登录为什么看不到内核消息」——根因是 `printk` 的 console_loglevel 默认 3 挡住 info/warning，不是接线；三条 `<0>`/`<6>@3`/`<6>@7` 对照已落 `rpi-network.md`。
