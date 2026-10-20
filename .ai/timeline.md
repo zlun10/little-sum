@@ -1,5 +1,16 @@
 # 任务时间线
 
+## 2026-10-20（串口升级为可自动执行的通道）— 第一次在 SSH 不可达时做「两侧同时刻对照」
+
+- 触发：今天 SSH 两次超时，而板侧 `nmcli dev status` 自称 `wlan0:connected`、地址没变、电脑侧 ICMP 3/3 通、TCP 22 失败 → **旧口径「不可达＝整机消失」不成立，至少要分「链路／数据面／某个端口」三层**。串口自动登录第一次被用来做这种两侧对照，这就是这条通道的实际价值定位：不是备胎，是**唯一能在网络失效时同时拿到板侧读数的入口**。
+- 控制器归属实测（`[板上实测]`，全部经串口）：`enable_uart=1` 在 config.txt 第 49 行、无 `disable-bt`；PL011 被蓝牙占走（`dmesg` `hci_uart_bcm serial0-0`）且 **`/dev/ttyAMA0` 没有节点**；`ttyS0` = `3f215040.serial`（mini-UART）；`/dev/serial0`（udev symlink）→ `ttyS0`；cmdline 带 `console=ttyS0,115200` 与 `8250.nr_uarts=1`；`serial-getty@ttyS0` = `enabled-runtime`＋active（自 boot 起）。
+- 决策（写作口径）：**`serial0` 是同名不同物**——DT 别名指 PL011、udev symlink 指 `ttyS0`，本板两者不是同一控制器 → 文档与命令一律写 `ttyS0` 或 `3f215040.serial`，不再裸写 `serial0` 谈控制器；要写 `/dev/serial0` 必须带「udev symlink」限定。
+- 判据（漂移第三次未复现）：同一串口连续多轮长命令（含 `sudo` 口令交互、几十行输出）逐字符无乱码 → `core_freq=250` 那条继续**不写进建议**。
+- 改判（去关联频次的头号候选）：`Associated with` 的 BSSID 在两次关联之间**变过**（同一 SSID、两个 AP 地址，约 5 分钟一次去关联）→ 路由器侧「双频合一／漫游引导」排在省电之前（省电按裁定不关）；零成本鉴别＝2.4G 单独命名后统计 `grep -c DISCONNECTED` 是否下降。今天 `No agents were available` 计数 0＝没有再次停摆，所以「停摆」与「抖」是两件事，各有候选。
+- 认片口径（PC 侧实测）：三片同型号 CH343 同时枚举为 `COM9`/`COM19`/`COM22`，名字逐字相同 → **COM 号不能当身份**；要固定只能记 DeviceID 里的 USB 序列号（属设备指纹，不入库）或贴物理标签＋规定同一个 USB 口。
+- 决策（自动化形态）：脚本与凭据都不入库——凭据放 PC 本地一个两行文件（账户／口令），脚本只取长度不回显；完成标记用 `echo PI''END` 的**裸行**（打字回显里带引号不会误判）；**必须先探测到 shell 提示符再发命令**，第一版没探测就被 `login:` 吃掉一次（`Login incorrect`）。
+- 未覆盖（要动板子或动环境，等用户）：`serial-getty@ttyS0` 是否每次开机自动起（**需一次重启复验**，现在只有 `enabled-runtime`＋本次 boot 的证据）；`dtoverlay=disable-bt` 与 `enable_uart=1` 叠加后控制台落点；路由器 2.4G 单独命名后的 DISCONNECTED 计数。
+
 ## 2026-10-19（不可达根因裁定 + 串口自动登录打通）— 三个候选全被推翻，时长另有来源
 
 - 根因（`[板上实测]` 18:30，日志经**串口自动登录**取得）：`17:22:20` `CTRL-EVENT-DISCONNECTED ... reason=15` → `4-Way Handshake failed` → `SSID-TEMP-DISABLED ... WRONG_KEY` → NM `activated -> need-auth` → `<warn> no secrets: No agents were available for this request.` → `need-auth -> failed (reason 'no-secrets')` → `disconnected`，此后 **68 分钟零重试**（`-u NetworkManager --since/--until | wc -l` = 1）。矛盾点：`connection.autoconnect: yes` 且 `802-11-wireless-security.psk-flags: 0 (none)`（口令在 keyfile 里），仍去问 agent 并因无人应答而放弃 → **切无头（②）之后没有能应答的 secret agent**，一次 4-Way 失败就能把连接永久晾下。
